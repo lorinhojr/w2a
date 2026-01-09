@@ -19,6 +19,9 @@ public class MainActivity extends AppCompatActivity {
         settings.setDomStorageEnabled(true); // O Construct salva dados aqui (essencial!)
         settings.setAllowFileAccess(true); // Permite ler o index.html local
         settings.setAllowContentAccess(true);
+        settings.setAllowFileAccessFromFileURLs(true);
+        settings.setAllowUniversalAccessFromFileURLs(true);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setDatabaseEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false); // Para o som tocar sozinho
 
