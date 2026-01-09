@@ -16,9 +16,11 @@ public class MainActivity extends AppCompatActivity {
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true); 
-        settings.setAllowFileAccess(true);
+        settings.setDomStorageEnabled(true); // O Construct salva dados aqui (essencial!)
+        settings.setAllowFileAccess(true); // Permite ler o index.html local
+        settings.setAllowContentAccess(true);
         settings.setDatabaseEnabled(true);
+        settings.setMediaPlaybackRequiresUserGesture(false); // Para o som tocar sozinho
 
         webView.setWebViewClient(new WebViewClient());
         webView.loadUrl("file:///android_asset/www/index.html");
