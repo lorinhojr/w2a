@@ -16,19 +16,24 @@ jobs:
           java-version: '17' # Mudei para 17 pois projetos novos do Android Studio usam .kts (Kotlin)
           distribution: 'temurin'
 
-      - name: Baixar e Extrair Site do Usuario
+      - name: Limpar e Extrair Projeto
         run: |
-          # Baixa o zip
-          curl -L "${{ github.event.client_payload.zip_url }}" -o site.zip
-          
-          # Cria a pasta assets/www se ela não existir
+          # 1. Garante que a pasta existe
           mkdir -p app/src/main/assets/www
           
-          # Limpa a pasta antes de extrair
+          # 2. Deleta TUDO que houver nela (limpeza total para não sobrar lixo do molde)
           rm -rf app/src/main/assets/www/*
           
-          # Extrai o ZIP direto na pasta correta
-          unzip -o site.zip -d app/src/main/assets/www
+          # 3. Baixa o ZIP do usuário
+          curl -L "${{ github.event.client_payload.zip_url }}" -o projeto.zip
+          
+          # 4. Extrai o conteúdo direto para a pasta assets/www
+          # O parâmetro -o serve para sobrescrever e o -j (se necessário) para ignorar pastas internas
+          unzip -o projeto.zip -d app/src/main/assets/www/
+          
+          # 5. Debug: Mostra no log se o index.html realmente apareceu lá
+          echo "Conteúdo da pasta assets/www após extração:"
+          ls -R app/src/main/assets/www/
 
       - name: Dar permissao ao Gradle
         run: chmod +x gradlew
