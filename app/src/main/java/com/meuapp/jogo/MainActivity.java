@@ -18,22 +18,21 @@ public class MainActivity extends AppCompatActivity {
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true); 
-        settings.setAllowFileAccess(true);
+        settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
+        settings.setAllowFileAccess(true);
         
-        // Habilita acesso total a arquivos locais (Essencial para Construct 3)
+        // Estas duas linhas permitem que o JS do jogo leia os arquivos JSON e imagens locais
         settings.setAllowFileAccessFromFileURLs(true);
         settings.setAllowUniversalAccessFromFileURLs(true);
 
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                // Se der erro de "Arquivo não encontrado" ou "Acesso negado", vai aparecer aqui!
-                view.loadData("Erro: " + error.getDescription(), "text/html", "UTF-8");
-            }
-        });
+        // Melhora a performance do jogo
+        settings.setLoadsImagesAutomatically(true);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
+        webView.setWebViewClient(new WebViewClient());
+        
+        // IMPORTANTE: Se o index.html estiver lá, isso tem que abrir.
         webView.loadUrl("file:///android_asset/www/index.html");
     }
 }
