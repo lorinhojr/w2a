@@ -1,0 +1,31 @@
+name: Criar Meu APK
+on:
+  repository_dispatch:
+    types: [build_event]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Instalar Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Baixar Site do Usuario
+        run: |
+          # O PHP vai mandar o link do ZIP, o robô baixa e descompacta
+          curl -L "${{ github.event.client_payload.zip_url }}" -o site.zip
+          unzip site.zip -d app/src/main/assets/www
+
+      - name: Gerar APK
+        run: bash gradlew assembleDebug
+
+      - name: Salvar APK Pronto
+        uses: actions/upload-artifact@v3
+        with:
+          name: meu-app-pronto
+          path: app/build/outputs/apk/debug/app-debug.apk
