@@ -13,22 +13,27 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '11'
+          java-version: '17' # Mudei para 17 pois projetos novos do Android Studio usam .kts (Kotlin)
           distribution: 'temurin'
 
       - name: Baixar e Extrair Site do Usuario
         run: |
+          # Baixa o zip
           curl -L "${{ github.event.client_payload.zip_url }}" -o site.zip
-          rm -rf app/src/main/assets/www/*
+          
+          # Cria a pasta assets/www se ela não existir
           mkdir -p app/src/main/assets/www
-          unzip site.zip -d app/src/main/assets/www
+          
+          # Limpa a pasta antes de extrair
+          rm -rf app/src/main/assets/www/*
+          
+          # Extrai o ZIP direto na pasta correta
+          unzip -o site.zip -d app/src/main/assets/www
 
       - name: Dar permissao ao Gradle
-        # ESSA LINHA É ESSENCIAL PARA EVITAR O ERRO 9
         run: chmod +x gradlew
 
       - name: Compilar APK
-        # Verifique se o arquivo gradlew está na raiz do seu Git
         run: ./gradlew assembleDebug
 
       - name: Upload do APK Pronto
