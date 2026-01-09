@@ -1,6 +1,8 @@
 package com.meuapp.jogo;
 
 import android.os.Bundle;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -16,16 +18,22 @@ public class MainActivity extends AppCompatActivity {
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true); // O Construct salva dados aqui (essencial!)
-        settings.setAllowFileAccess(true); // Permite ler o index.html local
-        settings.setAllowContentAccess(true);
+        settings.setDomStorageEnabled(true); 
+        settings.setAllowFileAccess(true);
+        settings.setDatabaseEnabled(true);
+        
+        // Habilita acesso total a arquivos locais (Essencial para Construct 3)
         settings.setAllowFileAccessFromFileURLs(true);
         settings.setAllowUniversalAccessFromFileURLs(true);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        settings.setDatabaseEnabled(true);
-        settings.setMediaPlaybackRequiresUserGesture(false); // Para o som tocar sozinho
 
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                // Se der erro de "Arquivo não encontrado" ou "Acesso negado", vai aparecer aqui!
+                view.loadData("Erro: " + error.getDescription(), "text/html", "UTF-8");
+            }
+        });
+
         webView.loadUrl("file:///android_asset/www/index.html");
     }
 }
