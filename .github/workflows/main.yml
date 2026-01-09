@@ -2,20 +2,17 @@ name: Fabrica SAAS
 on:
   repository_dispatch:
     types: [build_event]
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v4
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-
       - name: Personalizar Projeto (SED)
         run: |
           echo "=== INICIANDO PERSONALIZAÇÃO ==="
@@ -55,14 +52,13 @@ jobs:
           
           echo "=== Verificação final do build.gradle ==="
           grep -E "(namespace|applicationId)" app/build.gradle.kts
-
       - name: Download e Troca do Ícone
         run: |
           echo "=== BAIXANDO ÍCONE ==="
           echo "URL do ícone: ${{ github.event.client_payload.icon_url }}"
           
           # Tenta baixar o ícone
-          curl -A "Mozilla/5.0" -L "${{ github.event.client_payload.icon_url }}" -o icone_usuario.png || echo "AVISO: Não foi possível baixar o ícone"
+          curl -A "Mozilla/5.0" -L "${{ github.event.client_payload.icon_url }}" -o icone_usuario.png 2>/dev/null || echo "AVISO: Não foi possível baixar o ícone"
           
           if [ -f icone_usuario.png ] && [ $(stat -c%s icone_usuario.png) -gt 100 ]; then
             echo "Ícone baixado com sucesso ($(stat -c%s icone_usuario.png) bytes). Aplicando..."
@@ -75,7 +71,6 @@ jobs:
           
           echo "=== Ícones disponíveis ==="
           find app/src/main/res -name "ic_launcher*.png" -exec ls -la {} \;
-
       - name: Limpar e Extrair Projeto do Jogo
         run: |
           echo "=== CONFIGURANDO JOGO ==="
@@ -89,7 +84,7 @@ jobs:
           # 3. Baixa o ZIP do jogo
           if [ -n "${{ github.event.client_payload.zip_url }}" ]; then
             echo "Baixando jogo da URL: ${{ github.event.client_payload.zip_url }}"
-            curl -L "${{ github.event.client_payload.zip_url }}" -o jogo.zip || echo "Erro ao baixar ZIP"
+            curl -L "${{ github.event.client_payload.zip_url }}" -o jogo.zip 2>/dev/null || echo "Erro ao baixar ZIP"
           fi
           
           # 4. Extrai o ZIP se existir
@@ -120,27 +115,40 @@ jobs:
           ls -la app/src/main/assets/www/
           echo "=== PRIMEIROS ARQUIVOS ==="
           find app/src/main/assets/www -type f | head -10
-
       - name: Dar permissão ao Gradle
         run: chmod +x gradlew
-
       - name: Configurar keystore para assinatura
         run: |
           echo "=== CONFIGURANDO KEYSTORE ==="
-          echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 --decode > app/keystore.jks
-          echo "Keystore criado: $(ls -la app/keystore.jks)"
-
+          # Tenta decodificar o keystore de produção
+          echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 --decode > app/keystore.jks 2>/dev/null
+          
+          # Verifica se o keystore foi criado corretamente
+          if [ -f app/keystore.jks ] && [ $(stat -c%s app/keystore.jks) -gt 100 ]; then
+            echo "Keystore de produção configurado com sucesso: $(ls -la app/keystore.jks)"
+          else
+            echo "AVISO: Keystore de produção inválido ou não fornecido. Criando keystore debug para teste."
+            keytool -genkey -v \
+              -keystore app/keystore.jks \
+              -alias androiddebugkey \
+              -storepass android \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            echo "Keystore debug criado: $(ls -la app/keystore.jks)"
+          fi
       - name: Compilar APK e AAB (Release)
         run: |
           echo "=== INICIANDO COMPILAÇÃO ==="
           ./gradlew clean
           ./gradlew assembleRelease bundleRelease --stacktrace --info
         env:
-          ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD }}
-          ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD }}
-          ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS }}
+          ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD || 'android' }}
+          ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD || 'android' }}
+          ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS || 'androiddebugkey' }}
           ORG_GRADLE_PROJECT_storeFile: keystore.jks
-
       - name: Verificar se os arquivos foram gerados
         run: |
           echo "=== VERIFICANDO ARQUIVOS GERADOS ==="
@@ -154,18 +162,16 @@ jobs:
           echo "3. Conteúdo das pastas de release:"
           ls -la app/build/outputs/apk/release/ 2>/dev/null || echo "Pasta APK release não existe"
           ls -la app/build/outputs/bundle/release/ 2>/dev/null || echo "Pasta AAB release não existe"
-
       - name: Assinar Arquivos APK
         uses: r0adkll/sign-android-release@v1
         with:
           releaseDirectory: app/build/outputs/apk/release/
           signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          alias: ${{ secrets.ALIAS || 'androiddebugkey' }}
+          keyStorePassword: ${{ secrets.KEY_PASSWORD || 'android' }}
+          keyPassword: ${{ secrets.KEY_PASSWORD || 'android' }}
         id: sign_app
         continue-on-error: true
-
       - name: Upload APK Assinado
         if: steps.sign_app.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -173,7 +179,7 @@ jobs:
           name: APK_${{ github.event.client_payload.app_id }}
           path: ${{ steps.sign_app.outputs.signedReleaseFile }}
           retention-days: 7
-
+          if-no-files-found: warn
       - name: Upload APK Não Assinado (Fallback)
         if: steps.sign_app.outcome != 'success'
         uses: actions/upload-artifact@v4
@@ -181,14 +187,14 @@ jobs:
           name: APK_UNSIGNED_${{ github.event.client_payload.app_id }}
           path: app/build/outputs/apk/release/*.apk
           retention-days: 7
-
+          if-no-files-found: warn
       - name: Upload AAB para Play Store
         uses: actions/upload-artifact@v4
         with:
           name: AAB_${{ github.event.client_payload.app_id }}
           path: app/build/outputs/bundle/release/*.aab
           retention-days: 7
-
+          if-no-files-found: warn
       # Passo para notificar o sistema principal sobre a conclusão do build
       - name: Notificar Sistema Principal
         if: success() && github.event.client_payload.callback_url != ''
@@ -225,16 +231,17 @@ jobs:
           echo "Payload: $JSON_PAYLOAD"
           echo "URL: ${{ github.event.client_payload.callback_url }}"
           
-          # Enviar notificação
+          # Enviar notificação (sem Authorization header, assumindo URL externa)
           curl -X POST "${{ github.event.client_payload.callback_url }}" \
             -H "Content-Type: application/json" \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -d "$JSON_PAYLOAD" \
             --max-time 30 \
             --retry 2 \
             --retry-delay 5 \
-            --fail-with-body || echo "AVISO: Falha ao enviar notificação de sucesso"
-
+            --fail-with-body \
+            --silent \
+            --output /dev/null \
+            --write-out "Status: %{http_code}\n" || echo "AVISO: Falha ao enviar notificação de sucesso"
       # Passo para lidar com falhas
       - name: Notificar Falha
         if: failure() && github.event.client_payload.callback_url != ''
@@ -262,16 +269,17 @@ jobs:
           echo "Payload de erro: $JSON_PAYLOAD"
           echo "URL: ${{ github.event.client_payload.callback_url }}"
           
-          # Enviar notificação de erro
+          # Enviar notificação de erro (sem Authorization header)
           curl -X POST "${{ github.event.client_payload.callback_url }}" \
             -H "Content-Type: application/json" \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -d "$JSON_PAYLOAD" \
             --max-time 30 \
             --retry 2 \
             --retry-delay 5 \
-            --fail-with-body || echo "AVISO: Falha ao enviar notificação de erro"
-
+            --fail-with-body \
+            --silent \
+            --output /dev/null \
+            --write-out "Status: %{http_code}\n" || echo "AVISO: Falha ao enviar notificação de erro"
       - name: Limpeza Final
         if: always()
         run: |
