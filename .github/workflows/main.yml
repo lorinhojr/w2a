@@ -16,78 +16,46 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Personalizar Projeto (Strings, Package e MainActivity)
+      - name: Personalizar Projeto (SED)
         run: |
-          # Troca o nome do App nas strings
+          # 1. Troca o Nome do App
           sed -i "s/NOME_DINAMICO/${{ github.event.client_payload.app_name }}/g" app/src/main/res/values/strings.xml
           
-          # Troca o Package Name no Manifest
+          # 2. Troca o Package no Manifest (Apenas no nome da Activity)
           sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/src/main/AndroidManifest.xml
           
-          # Troca o Package Name na MainActivity.java (se existir)
-          if [ -f "app/src/main/java/com/meuapp/jogo/MainActivity.java" ]; then
-            sed -i "s/package com.meuapp.jogo/package ${{ github.event.client_payload.package_name }}/g" app/src/main/java/com/meuapp/jogo/MainActivity.java
-            # Também atualiza o import se necessário
-            sed -i "s/import com.meuapp.jogo/import ${{ github.event.client_payload.package_name }}/g" app/src/main/java/com/meuapp/jogo/MainActivity.java
-          fi
+          # 3. Troca o Package no Gradle (O que corrige o erro do AAB)
+          sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/build.gradle.kts
+          
+          # 4. Troca o Package no código Java
+          sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/src/main/java/com/meuapp/jogo/MainActivity.java
+          
+          # 5. Troca o Package no namespace do build.gradle.kts (crucial para AAB)
+          sed -i "s/namespace \"PACOTE_DINAMICO\"/namespace \"${{ github.event.client_payload.package_name }}\"/g" app/build.gradle.kts
           
           # Mostra o conteúdo atualizado para debug
           echo "=== AndroidManifest.xml após atualização ==="
           cat app/src/main/AndroidManifest.xml
           
-          if [ -f "app/src/main/java/com/meuapp/jogo/MainActivity.java" ]; then
-            echo "=== MainActivity.java após atualização ==="
-            cat app/src/main/java/com/meuapp/jogo/MainActivity.java
-          fi
+          echo "=== build.gradle.kts após atualização ==="
+          cat app/build.gradle.kts
+          
+          echo "=== MainActivity.java após atualização ==="
+          cat app/src/main/java/com/meuapp/jogo/MainActivity.java
 
-      - name: Trocar Ícone do App
+      - name: Download e Troca do Ícone
         run: |
-          # Download do ícone do usuário se fornecido
-          if [ -n "${{ github.event.client_payload.icon_url }}" ]; then
-            echo "Baixando ícone personalizado..."
-            curl -L "${{ github.event.client_payload.icon_url }}" -o icone_usuario.png
-            
-            # Redimensionar para diferentes densidades (opcional, mas recomendado)
-            if command -v convert &> /dev/null; then
-              echo "Redimensionando ícone para diferentes densidades..."
-              mkdir -p icons
-              
-              # mdpi (48x48)
-              convert icone_usuario.png -resize 48x48 icons/ic_launcher_mdpi.png
-              # hdpi (72x72)
-              convert icone_usuario.png -resize 72x72 icons/ic_launcher_hdpi.png
-              # xhdpi (96x96)
-              convert icone_usuario.png -resize 96x96 icons/ic_launcher_xhdpi.png
-              # xxhdpi (144x144)
-              convert icone_usuario.png -resize 144x144 icons/ic_launcher_xxhdpi.png
-              # xxxhdpi (192x192)
-              convert icone_usuario.png -resize 192x192 icons/ic_launcher_xxxhdpi.png
-              
-              # Copiar para as respectivas pastas
-              find app/src/main/res -name "mipmap-mdpi" -exec cp icons/ic_launcher_mdpi.png {}/ic_launcher.png \;
-              find app/src/main/res -name "mipmap-mdpi" -exec cp icons/ic_launcher_mdpi.png {}/ic_launcher_round.png \;
-              
-              find app/src/main/res -name "mipmap-hdpi" -exec cp icons/ic_launcher_hdpi.png {}/ic_launcher.png \;
-              find app/src/main/res -name "mipmap-hdpi" -exec cp icons/ic_launcher_hdpi.png {}/ic_launcher_round.png \;
-              
-              find app/src/main/res -name "mipmap-xhdpi" -exec cp icons/ic_launcher_xhdpi.png {}/ic_launcher.png \;
-              find app/src/main/res -name "mipmap-xhdpi" -exec cp icons/ic_launcher_xhdpi.png {}/ic_launcher_round.png \;
-              
-              find app/src/main/res -name "mipmap-xxhdpi" -exec cp icons/ic_launcher_xxhdpi.png {}/ic_launcher.png \;
-              find app/src/main/res -name "mipmap-xxhdpi" -exec cp icons/ic_launcher_xxhdpi.png {}/ic_launcher_round.png \;
-              
-              find app/src/main/res -name "mipmap-xxxhdpi" -exec cp icons/ic_launcher_xxxhdpi.png {}/ic_launcher.png \;
-              find app/src/main/res -name "mipmap-xxxhdpi" -exec cp icons/ic_launcher_xxxhdpi.png {}/ic_launcher_round.png \;
-            else
-              echo "ImageMagick não disponível. Usando o mesmo ícone para todas as densidades."
-              # Copiar o mesmo ícone para todas as densidades
-              find app/src/main/res/mipmap-* -name "ic_launcher.png" -exec cp icone_usuario.png {} \;
-              find app/src/main/res/mipmap-* -name "ic_launcher_round.png" -exec cp icone_usuario.png {} \;
-            fi
-            
+          echo "Tentando baixar ícone..."
+          # Tenta baixar o ícone. Se falhar, o '|| true' garante que o robô não pare.
+          curl -A "Mozilla/5.0" -L "${{ github.event.client_payload.icon_url }}" -o icone_usuario.png || true
+          
+          if [ -f icone_usuario.png ] && [ $(stat -c%s icone_usuario.png) -gt 0 ]; then
+            echo "Ícone baixado com sucesso. Aplicando em todas as densidades..."
+            find app/src/main/res/mipmap-* -name "ic_launcher.png" -exec cp icone_usuario.png {} \;
+            find app/src/main/res/mipmap-* -name "ic_launcher_round.png" -exec cp icone_usuario.png {} \;
             echo "Ícone personalizado aplicado com sucesso!"
           else
-            echo "Nenhum ícone personalizado fornecido. Mantendo o ícone padrão."
+            echo "Falha ao baixar ícone ou link inválido. Mantendo ícone padrão do molde."
           fi
           
           # Mostrar os ícones atualizados para debug
@@ -131,6 +99,9 @@ jobs:
               elif [ -f "app/src/main/assets/www/main.html" ]; then
                 mv app/src/main/assets/www/main.html app/src/main/assets/www/index.html
                 echo "main.html renomeado para index.html"
+              elif [ -f "app/src/main/assets/www/index.php" ]; then
+                mv app/src/main/assets/www/index.php app/src/main/assets/www/index.html
+                echo "index.php renomeado para index.html (modo compatibilidade PHP)"
               fi
             fi
           fi
@@ -142,13 +113,28 @@ jobs:
       - name: Dar permissão ao Gradle
         run: chmod +x gradlew
 
+      - name: Configurar keystore para assinatura
+        run: |
+          echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 --decode > app/keystore.jks
+          echo "Keystore configurado com sucesso"
+
       - name: Compilar APK e AAB (Release)
-        run: ./gradlew assembleRelease bundleRelease
+        run: ./gradlew assembleRelease bundleRelease --stacktrace --info
         env:
           ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD }}
           ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD }}
           ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS }}
           ORG_GRADLE_PROJECT_storeFile: keystore.jks
+
+      - name: Verificar se os arquivos foram gerados
+        run: |
+          echo "=== Verificando arquivos gerados ==="
+          echo "APK Debug:"
+          ls -la app/build/outputs/apk/debug/
+          echo "APK Release:"
+          ls -la app/build/outputs/apk/release/
+          echo "AAB Release:"
+          ls -la app/build/outputs/bundle/release/
 
       - name: Assinar Arquivos
         uses: r0adkll/sign-android-release@v1
@@ -176,13 +162,20 @@ jobs:
       - name: Notificar Sistema Principal
         if: success()
         run: |
+          # Obter nome do arquivo AAB
+          AAB_FILE=$(ls app/build/outputs/bundle/release/*.aab | xargs basename)
+          
           curl -X POST "${{ github.event.client_payload.callback_url }}" \
           -H "Content-Type: application/json" \
           -d '{
             "status": "success",
             "app_id": "${{ github.event.client_payload.app_id }}",
-            "apk_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.sign_app.outputs.signedReleaseFile }}",
-            "aab_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/app/build/outputs/bundle/release/*.aab"
+            "apk_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?name=APK_${{ github.event.client_payload.app_id }}",
+            "aab_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?name=AAB_${{ github.event.client_payload.app_id }}",
+            "artifact_names": {
+              "apk": "APK_${{ github.event.client_payload.app_id }}",
+              "aab": "AAB_${{ github.event.client_payload.app_id }}"
+            }
           }'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -196,7 +189,8 @@ jobs:
           -d '{
             "status": "error",
             "app_id": "${{ github.event.client_payload.app_id }}",
-            "error": "Falha no processo de build"
+            "error": "Falha no processo de build - verifique os logs para detalhes",
+            "logs_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
