@@ -1,4 +1,4 @@
-name: Gerar APK
+name: Fabrica SAAS
 on:
   repository_dispatch:
     types: [build_event]
@@ -7,42 +7,196 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout do molde
+      - name: Checkout do repositório
         uses: actions/checkout@v4
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17' # Mudei para 17 pois projetos novos do Android Studio usam .kts (Kotlin)
+          java-version: '17'
           distribution: 'temurin'
 
-      - name: Limpar e Extrair Projeto
+      - name: Personalizar Projeto (Strings, Package e MainActivity)
         run: |
-          # 1. Garante que a pasta existe
+          # Troca o nome do App nas strings
+          sed -i "s/NOME_DINAMICO/${{ github.event.client_payload.app_name }}/g" app/src/main/res/values/strings.xml
+          
+          # Troca o Package Name no Manifest
+          sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/src/main/AndroidManifest.xml
+          
+          # Troca o Package Name na MainActivity.java (se existir)
+          if [ -f "app/src/main/java/com/meuapp/jogo/MainActivity.java" ]; then
+            sed -i "s/package com.meuapp.jogo/package ${{ github.event.client_payload.package_name }}/g" app/src/main/java/com/meuapp/jogo/MainActivity.java
+            # Também atualiza o import se necessário
+            sed -i "s/import com.meuapp.jogo/import ${{ github.event.client_payload.package_name }}/g" app/src/main/java/com/meuapp/jogo/MainActivity.java
+          fi
+          
+          # Mostra o conteúdo atualizado para debug
+          echo "=== AndroidManifest.xml após atualização ==="
+          cat app/src/main/AndroidManifest.xml
+          
+          if [ -f "app/src/main/java/com/meuapp/jogo/MainActivity.java" ]; then
+            echo "=== MainActivity.java após atualização ==="
+            cat app/src/main/java/com/meuapp/jogo/MainActivity.java
+          fi
+
+      - name: Trocar Ícone do App
+        run: |
+          # Download do ícone do usuário se fornecido
+          if [ -n "${{ github.event.client_payload.icon_url }}" ]; then
+            echo "Baixando ícone personalizado..."
+            curl -L "${{ github.event.client_payload.icon_url }}" -o icone_usuario.png
+            
+            # Redimensionar para diferentes densidades (opcional, mas recomendado)
+            if command -v convert &> /dev/null; then
+              echo "Redimensionando ícone para diferentes densidades..."
+              mkdir -p icons
+              
+              # mdpi (48x48)
+              convert icone_usuario.png -resize 48x48 icons/ic_launcher_mdpi.png
+              # hdpi (72x72)
+              convert icone_usuario.png -resize 72x72 icons/ic_launcher_hdpi.png
+              # xhdpi (96x96)
+              convert icone_usuario.png -resize 96x96 icons/ic_launcher_xhdpi.png
+              # xxhdpi (144x144)
+              convert icone_usuario.png -resize 144x144 icons/ic_launcher_xxhdpi.png
+              # xxxhdpi (192x192)
+              convert icone_usuario.png -resize 192x192 icons/ic_launcher_xxxhdpi.png
+              
+              # Copiar para as respectivas pastas
+              find app/src/main/res -name "mipmap-mdpi" -exec cp icons/ic_launcher_mdpi.png {}/ic_launcher.png \;
+              find app/src/main/res -name "mipmap-mdpi" -exec cp icons/ic_launcher_mdpi.png {}/ic_launcher_round.png \;
+              
+              find app/src/main/res -name "mipmap-hdpi" -exec cp icons/ic_launcher_hdpi.png {}/ic_launcher.png \;
+              find app/src/main/res -name "mipmap-hdpi" -exec cp icons/ic_launcher_hdpi.png {}/ic_launcher_round.png \;
+              
+              find app/src/main/res -name "mipmap-xhdpi" -exec cp icons/ic_launcher_xhdpi.png {}/ic_launcher.png \;
+              find app/src/main/res -name "mipmap-xhdpi" -exec cp icons/ic_launcher_xhdpi.png {}/ic_launcher_round.png \;
+              
+              find app/src/main/res -name "mipmap-xxhdpi" -exec cp icons/ic_launcher_xxhdpi.png {}/ic_launcher.png \;
+              find app/src/main/res -name "mipmap-xxhdpi" -exec cp icons/ic_launcher_xxhdpi.png {}/ic_launcher_round.png \;
+              
+              find app/src/main/res -name "mipmap-xxxhdpi" -exec cp icons/ic_launcher_xxxhdpi.png {}/ic_launcher.png \;
+              find app/src/main/res -name "mipmap-xxxhdpi" -exec cp icons/ic_launcher_xxxhdpi.png {}/ic_launcher_round.png \;
+            else
+              echo "ImageMagick não disponível. Usando o mesmo ícone para todas as densidades."
+              # Copiar o mesmo ícone para todas as densidades
+              find app/src/main/res/mipmap-* -name "ic_launcher.png" -exec cp icone_usuario.png {} \;
+              find app/src/main/res/mipmap-* -name "ic_launcher_round.png" -exec cp icone_usuario.png {} \;
+            fi
+            
+            echo "Ícone personalizado aplicado com sucesso!"
+          else
+            echo "Nenhum ícone personalizado fornecido. Mantendo o ícone padrão."
+          fi
+          
+          # Mostrar os ícones atualizados para debug
+          echo "=== Ícones disponíveis após atualização ==="
+          find app/src/main/res -name "ic_launcher*.png" -exec ls -la {} \;
+
+      - name: Limpar e Extrair Projeto do Jogo
+        run: |
+          # 1. Garante que a pasta assets/www existe
           mkdir -p app/src/main/assets/www
           
-          # 2. Deleta TUDO que houver nela (limpeza total para não sobrar lixo do molde)
+          # 2. Limpa a pasta se já existir conteúdo
           rm -rf app/src/main/assets/www/*
           
-          # 3. Baixa o ZIP do usuário
-          curl -L "${{ github.event.client_payload.zip_url }}" -o projeto.zip
+          # 3. Baixa o ZIP do jogo (com fallback para URL padrão se necessário)
+          if [ -n "${{ github.event.client_payload.zip_url }}" ]; then
+            echo "Baixando jogo da URL: ${{ github.event.client_payload.zip_url }}"
+            curl -L "${{ github.event.client_payload.zip_url }}" -o jogo.zip
+          else
+            echo "URL do jogo não fornecida. Usando conteúdo de exemplo."
+            # Criar um index.html de exemplo
+            mkdir -p app/src/main/assets/www
+            echo "<html><body><h1>Jogo de Exemplo</h1><p>Este é um jogo de exemplo.</p></body></html>" > app/src/main/assets/www/index.html
+          fi
           
-          # 4. Extrai o conteúdo direto para a pasta assets/www
-          # O parâmetro -o serve para sobrescrever e o -j (se necessário) para ignorar pastas internas
-          unzip -o projeto.zip -d app/src/main/assets/www/
+          # 4. Extrai apenas se o arquivo zip existir
+          if [ -f "jogo.zip" ]; then
+            echo "Extraindo conteúdo do jogo..."
+            unzip -o jogo.zip -d app/src/main/assets/www/
+            
+            # 5. Verifica se o index.html foi extraído corretamente
+            if [ ! -f "app/src/main/assets/www/index.html" ]; then
+              echo "AVISO: index.html não encontrado no ZIP. Verificando estrutura do projeto..."
+              # Procurar por arquivos HTML ou JS que podem ser o ponto de entrada
+              find app/src/main/assets/www/ -name "*.html" -o -name "*.htm" -o -name "*.js"
+              
+              # Se encontrar um arquivo HTML, renomear para index.html
+              if [ -f "app/src/main/assets/www/index.htm" ]; then
+                mv app/src/main/assets/www/index.htm app/src/main/assets/www/index.html
+                echo "index.htm renomeado para index.html"
+              elif [ -f "app/src/main/assets/www/main.html" ]; then
+                mv app/src/main/assets/www/main.html app/src/main/assets/www/index.html
+                echo "main.html renomeado para index.html"
+              fi
+            fi
+          fi
           
-          # 5. Debug: Mostra no log se o index.html realmente apareceu lá
-          echo "Conteúdo da pasta assets/www após extração:"
-          ls -R app/src/main/assets/www/
+          # 6. Debug: Mostra o conteúdo da pasta assets/www
+          echo "=== Conteúdo da pasta assets/www após extração ==="
+          ls -laR app/src/main/assets/www/
 
-      - name: Dar permissao ao Gradle
+      - name: Dar permissão ao Gradle
         run: chmod +x gradlew
 
-      - name: Compilar APK
-        run: ./gradlew assembleDebug
+      - name: Compilar APK e AAB (Release)
+        run: ./gradlew assembleRelease bundleRelease
+        env:
+          ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS }}
+          ORG_GRADLE_PROJECT_storeFile: keystore.jks
 
-      - name: Upload do APK Pronto
+      - name: Assinar Arquivos
+        uses: r0adkll/sign-android-release@v1
+        with:
+          releaseDirectory: app/build/outputs/apk/release/
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        id: sign_app
+
+      - name: Upload APK Assinado
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: APK_${{ github.event.client_payload.app_id }}
+          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+
+      - name: Upload AAB para Play Store
+        uses: actions/upload-artifact@v4
+        with:
+          name: AAB_${{ github.event.client_payload.app_id }}
+          path: app/build/outputs/bundle/release/*.aab
+
+      # Passo opcional para notificar o sistema principal sobre a conclusão do build
+      - name: Notificar Sistema Principal
+        if: success()
+        run: |
+          curl -X POST "${{ github.event.client_payload.callback_url }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "status": "success",
+            "app_id": "${{ github.event.client_payload.app_id }}",
+            "apk_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.sign_app.outputs.signedReleaseFile }}",
+            "aab_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/app/build/outputs/bundle/release/*.aab"
+          }'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Passo para lidar com falhas
+      - name: Notificar Falha
+        if: failure()
+        run: |
+          curl -X POST "${{ github.event.client_payload.callback_url }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "status": "error",
+            "app_id": "${{ github.event.client_payload.app_id }}",
+            "error": "Falha no processo de build"
+          }'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
