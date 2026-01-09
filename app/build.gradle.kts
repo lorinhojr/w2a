@@ -4,30 +4,41 @@ plugins {
 }
 
 android {
-    // IMPORTANTE PARA O AAB: O namespace deve ser dinâmico
-    namespace = "PACOTE_DINAMICO"
-    compileSdk = 34 // Versão estável recomendada para evitar erros de preview
+    namespace = "com.template.app" // Valor padrão que será substituído
+    compileSdk = 34
 
     defaultConfig {
-        // IDENTIDADE NA PLAY STORE: O applicationId deve ser dinâmico
-        applicationId = "PACOTE_DINAMICO"
-        
+        applicationId = "com.template.app" // Valor padrão que será substituído
         minSdk = 24
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("keystore.jks")
+            storePassword = System.getenv("STORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: ""
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Configuração de assinatura automática (gerenciada pelo main.yml)
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        
+        debug {
+            isDebuggable = true
+            applicationIdSuffix = ".debug"
         }
     }
 
@@ -40,10 +51,12 @@ android {
         jvmTarget = "11"
     }
 
-    // Garante que os recursos do jogo (assets) não sejam comprimidos 
-    // Isso ajuda na velocidade de carregamento do Construct 3
+    buildFeatures {
+        viewBinding = true
+    }
+
     aaptOptions {
-        noCompress(".*")
+        noCompress.addAll(listOf("bin", "dat", "wasm", "js.mem", "data"))
     }
 }
 
@@ -51,10 +64,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
-    
-    // BIBLIOTECA VITAL PARA O CONSTRUCT 3 (WebViewAssetLoader)
     implementation("androidx.webkit:webkit:1.12.1")
-    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
