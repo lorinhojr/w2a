@@ -5,10 +5,12 @@ import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.webkit.WebViewAssetLoader; // Import necessário para WebViewAssetLoader
 
 public class MainActivity extends AppCompatActivity {
     @Override
@@ -58,8 +60,20 @@ public class MainActivity extends AppCompatActivity {
             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         );
 
+        // Configuração do WebViewAssetLoader para permitir Web Workers e melhor segurança
+        WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+            .build();
+
         // 5. Garante que o jogo use toda a tela e não abra o Chrome externo
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                // Isso faz o Android pensar que o jogo está num site https://appassets.androidplatform.net/assets/www/index.html  
+                // em vez de um arquivo local. Isso libera o uso de Workers!
+                return assetLoader.shouldInterceptRequest(request.getUrl());
+            }
+            
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
@@ -67,8 +81,16 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // 6. Carrega o jogo
-        // IMPORTANTE: Se o index.html estiver lá, isso tem que abrir.
-        webView.loadUrl("file:///android_asset/www/index.html");
+        // 6. Carrega o jogo usando o asset loader (necessário para Web Workers funcionarem)
+        // IMPORTANTE: Esta URL especial permite que o jogo acesse recursos locais como se fosse um site HTTPS
+        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
+
+        /*
+         * IMPORTANTE: No seu build.gradle (Module: app) adicione esta dependência:
+         * implementation 'androidx.webkit:webkit:1.8.0'
+         * 
+         * E no AndroidManifest.xml, certifique-se de ter:
+         * <uses-permission android:name="android.permission.INTERNET" />
+         */
     }
 }
