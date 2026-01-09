@@ -1,4 +1,4 @@
-name: Criar Meu APK
+name: Gerar APK
 on:
   repository_dispatch:
     types: [build_event]
@@ -7,25 +7,32 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Instalar Java
+      - name: Checkout do molde
+        uses: actions/checkout@v4
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: '11'
           distribution: 'temurin'
 
-      - name: Baixar Site do Usuario
+      - name: Baixar e Extrair Site do Usuario
         run: |
-          # O PHP vai mandar o link do ZIP, o robô baixa e descompacta
           curl -L "${{ github.event.client_payload.zip_url }}" -o site.zip
+          rm -rf app/src/main/assets/www/*
+          mkdir -p app/src/main/assets/www
           unzip site.zip -d app/src/main/assets/www
 
-      - name: Gerar APK
-        run: bash gradlew assembleDebug
+      - name: Dar permissao ao Gradle
+        # ESSA LINHA É ESSENCIAL PARA EVITAR O ERRO 9
+        run: chmod +x gradlew
 
-      - name: Salvar APK Pronto
+      - name: Compilar APK
+        # Verifique se o arquivo gradlew está na raiz do seu Git
+        run: ./gradlew assembleDebug
+
+      - name: Upload do APK Pronto
         uses: actions/upload-artifact@v4
         with:
-          name: meu-app-pronto
+          name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
