@@ -34,400 +34,118 @@ jobs:
           echo "App Name: $APP_NAME"
           echo "================================"
           
-          # Criar estrutura de diretórios com base no package
           PKG_PATH=$(echo "$PKG" | tr '.' '/')
-          echo "Criando estrutura: $PKG_PATH"
           
           # ===== STRINGS =====
-          echo "Atualizando strings.xml"
           if [ -f "app/src/main/res/values/strings.xml" ]; then
             sed -i "s/NOME_DINAMICO/$APP_NAME/g" app/src/main/res/values/strings.xml
-            echo "✓ strings.xml atualizado"
-          else
-            echo "✗ strings.xml não encontrado"
-            exit 1
           fi
           
           # ===== MANIFEST =====
-          echo "Atualizando AndroidManifest.xml"
           if [ -f "app/src/main/AndroidManifest.xml" ]; then
-            sed -i "s/package=\"[^\"]*\"/package=\"$PKG\"/g" app/src/main/AndroidManifest.xml
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/src/main/AndroidManifest.xml
-            echo "✓ AndroidManifest.xml atualizado"
-          else
-            echo "✗ AndroidManifest.xml não encontrado"
-            exit 1
+            # Remove package="..." antigo para evitar conflito com namespace do Gradle 8+
+            sed -i 's/package="[^"]*"//g' app/src/main/AndroidManifest.xml
           fi
           
           # ===== GRADLE =====
-          echo "Atualizando build.gradle.kts"
           if [ -f "app/build.gradle.kts" ]; then
             sed -i "s/namespace = \".*\"/namespace = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/applicationId = \".*\"/applicationId = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/build.gradle.kts
-            echo "✓ build.gradle.kts atualizado"
-          else
-            echo "✗ build.gradle.kts não encontrado"
-            exit 1
           fi
           
-          # ===== JAVA =====
-          echo "Reorganizando arquivos Java"
-          
-          # Encontrar o MainActivity atual
-          if [ -f "app/src/main/java/com/meuapp/jogo/MainActivity.java" ]; then
-            echo "Encontrado MainActivity em: app/src/main/java/com/meuapp/jogo/MainActivity.java"
-            
-            # Criar nova estrutura
+          # ===== JAVA REORGANIZAÇÃO =====
+          # Procura qualquer MainActivity.java no projeto e move para a pasta do novo package
+          OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
+          if [ ! -z "$OLD_PATH" ]; then
             mkdir -p "app/src/main/java/$PKG_PATH"
-            
-            # Copiar e atualizar o MainActivity
-            cp "app/src/main/java/com/meuapp/jogo/MainActivity.java" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            
-            # Atualizar o package no arquivo Java
-            sed -i "s/package PACOTE_DINAMICO;/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
+            mv "$OLD_PATH" "app/src/main/java/$PKG_PATH/MainActivity.java"
+            sed -i "s/package .*/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
             sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            
-            # Remover a estrutura antiga
-            rm -rf app/src/main/java/com
-            
-            echo "✓ Arquivos Java reorganizados"
-          else
-            echo "Procurando MainActivity em outras localizações..."
-            OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
-            if [ ! -z "$OLD_PATH" ]; then
-              OLD_DIR=$(dirname "$OLD_PATH")
-              echo "Movendo de: $OLD_DIR"
-              mkdir -p "app/src/main/java/$PKG_PATH"
-              cp "$OLD_PATH" "app/src/main/java/$PKG_PATH/MainActivity.java"
-              sed -i "s/package .*;/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
-              sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
-              find "$OLD_DIR" -type f -exec rm {} \;
-              find app/src/main/java -type d -empty -delete
-              echo "✓ Arquivos Java reorganizados (alternativo)"
-            else
-              echo "✗ MainActivity não encontrado"
-              exit 1
-            fi
+            # Limpa pastas vazias
+            find app/src/main/java -type d -empty -delete
           fi
           
           # ===== PROGUARD =====
-          echo "Atualizando proguard-rules.pro"
           if [ -f "app/proguard-rules.pro" ]; then
-            # Verificar se o arquivo já tem a regra da MainActivity
-            if grep -q "PACOTE_DINAMICO.MainActivity" app/proguard-rules.pro; then
-              sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
-              echo "✓ proguard-rules.pro atualizado (placeholder substituído)"
-            else
-              # Adicionar a regra da MainActivity no final do arquivo
-              echo "" >> app/proguard-rules.pro
-              echo "# Regra para manter a MainActivity" >> app/proguard-rules.pro
-              echo "-keep class $PKG.MainActivity { *; }" >> app/proguard-rules.pro
-              echo "✓ Regra da MainActivity adicionada ao proguard-rules.pro"
-            fi
-          else
-            echo "⚠ proguard-rules.pro não encontrado, criando..."
-            # Criar arquivo proguard-rules.pro com regras básicas
-            cat > app/proguard-rules.pro << 'EOF'
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
-
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
-
-# ====================================================
-# Regras específicas para WebView e Construct/HTML5
-# ====================================================
-
-# Manter classes do WebView e WebKit
--keep class org.chromium.** { *; }
--dontwarn org.chromium.**
-
-# Manter classes de WebViewClient e WebChromeClient
--keep class * extends android.webkit.WebChromeClient { *; }
--keep class * extends android.webkit.WebViewClient { *; }
--keepclassmembers class * extends android.webkit.WebView {
-    public *;
-}
-
-# Manter WebViewAssetLoader
--keep class androidx.webkit.** { *; }
--dontwarn androidx.webkit.**
-
-# Manter JavaScript interfaces
--keepattributes *Annotation*
--keepattributes JavascriptInterface
--keepclassmembers class * {
-    @android.webkit.JavascriptInterface <methods>;
-}
-
-# Manter atividades, serviços e receptores de broadcast
--keep public class * extends android.app.Activity
--keep public class * extends android.app.Service
--keep public class * extends android.content.BroadcastReceiver
-
-# Manter métodos nativos
--keepclasseswithmembernames class * {
-    native <methods>;
-}
-
-# Manter enums
--keepclassmembers enum * {
-    public static **[] values();
-    public static ** valueOf(java.lang.String);
-}
-
-# Manter parcelable
--keep class * implements android.os.Parcelable {
-  public static final android.os.Parcelable$Creator *;
-}
-
-# Manter serializable
--keepclassmembers class * implements java.io.Serializable {
-    static final long serialVersionUID;
-    private static final java.io.ObjectStreamField[] serialPersistentFields;
-    private void writeObject(java.io.ObjectOutputStream);
-    private void readObject(java.io.ObjectInputStream);
-    java.lang.Object writeReplace();
-    java.lang.Object readResolve();
-}
-
-# Manter classes R (resources)
--keep class **.R$* { *; }
-
-# Manter a MainActivity principal
--keep class PACOTE_DINAMICO.MainActivity { *; }
-EOF
-            # Agora substitua o placeholder
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
-            echo "✓ proguard-rules.pro criado e atualizado"
           fi
-          
-          echo "================================"
-          echo "PERSONALIZAÇÃO CONCLUÍDA"
-          echo "================================"
 
       - name: Configurar Keystore
         run: |
-          echo "Configurando keystore..."
           cd app
-          
           if [ -f "chave1.jks" ]; then
-            echo "Usando chave1.jks existente"
             echo "ORG_GRADLE_PROJECT_storeFile=chave1.jks" >> $GITHUB_ENV
           else
-            echo "Gerando keystore de debug"
-            keytool -genkeypair -v \
-              -keystore keystore.jks \
-              -alias androiddebugkey \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass android \
-              -keypass android \
+            keytool -genkeypair -v -keystore keystore.jks -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
               -dname "CN=Android Debug, O=Android, C=US"
             echo "ORG_GRADLE_PROJECT_storeFile=keystore.jks" >> $GITHUB_ENV
           fi
-          
           cd ..
 
       - name: Download e Aplicação do Ícone
         run: |
-          echo "=== BAIXANDO ÍCONE ==="
-          
-          # Instalar imagemagick se necessário para criar ícone padrão
           sudo apt-get update && sudo apt-get install -y imagemagick webp || true
           
-          curl -L \
-            -H "User-Agent: Mozilla/5.0" \
-            --fail-with-body \
-            "${{ github.event.client_payload.icon_url }}" \
-            -o /tmp/ic_launcher.webp || {
-              echo "Falha ao baixar ícone, criando padrão..."
-              # Criar ícone padrão simples com imagemagick ou fallback
-              if command -v convert &> /dev/null; then
-                convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
-              else
-                echo "Criando arquivo WebP vazio como fallback..."
-                echo -n "RIFF\x00\x00\x00\x00WEBP" > /tmp/ic_launcher.webp
-              fi
-            }
+          ICON_URL="${{ github.event.client_payload.icon_url }}"
+          if [ -n "$ICON_URL" ]; then
+            curl -L -A "Mozilla/5.0" "$ICON_URL" -o /tmp/ic_launcher.webp || echo "Erro download"
+          fi
+
+          if [ ! -f /tmp/ic_launcher.webp ]; then
+            convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
+          fi
           
-          echo "=== SUBSTITUINDO ÍCONES ==="
-          
-          # Para cada densidade
           for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
             BASE="app/src/main/res/$dir"
-            
-            if [ -d "$BASE" ]; then
-              # Remover ícones antigos
-              rm -f "$BASE/ic_launcher.webp" "$BASE/ic_launcher.png" 2>/dev/null || true
-              rm -f "$BASE/ic_launcher_round.webp" "$BASE/ic_launcher_round.png" 2>/dev/null || true
-              
-              # Copiar novo ícone
-              cp /tmp/ic_launcher.webp "$BASE/ic_launcher.webp" 2>/dev/null || true
-              
-              # Criar versão round se o arquivo já existia
-              if [ -f "$BASE/ic_launcher_round.webp" ] || [ -f "$BASE/ic_launcher_round.png" ]; then
-                cp /tmp/ic_launcher.webp "$BASE/ic_launcher_round.webp" 2>/dev/null || true
-              fi
-              
-              echo "✓ Atualizado $dir"
-            else
-              echo "⚠ Diretório $dir não encontrado, criando..."
-              mkdir -p "$BASE"
-              cp /tmp/ic_launcher.webp "$BASE/ic_launcher.webp" 2>/dev/null || true
-            fi
+            mkdir -p "$BASE"
+            cp /tmp/ic_launcher.webp "$BASE/ic_launcher.webp"
+            cp /tmp/ic_launcher.webp "$BASE/ic_launcher_round.webp"
           done
 
       - name: Extrair jogo (HTML/Construct)
         run: |
-          # Definir variáveis novamente pois este é um passo separado
-          APP_NAME="${{ github.event.client_payload.app_name }}"
-          
-          echo "=== EXTRAINDO JOGO ==="
-          
-          # Criar diretório se não existir
           mkdir -p app/src/main/assets/www
-          
-          # Limpar conteúdo anterior
           rm -rf app/src/main/assets/www/*
           
-          # Baixar e extrair
-          curl -L --retry 3 "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
+          curl -L "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
           
-          if [ $? -eq 0 ] && [ -s /tmp/jogo.zip ]; then
-            echo "Extraindo arquivos..."
+          if [ -s /tmp/jogo.zip ]; then
             unzip -q -o /tmp/jogo.zip -d app/src/main/assets/www/
-            
-            # Verificar se existe index.html
+            # Ajustar se o ZIP veio com uma pasta raiz
             if [ ! -f "app/src/main/assets/www/index.html" ]; then
-              echo "index.html não encontrado na raiz, procurando..."
-              # Procurar em subdiretórios
-              FOUND_INDEX=$(find app/src/main/assets/www -name "index.html" -type f | head -1)
-              if [ ! -z "$FOUND_INDEX" ]; then
-                echo "Movendo index.html para raiz..."
-                mv "$FOUND_INDEX" "app/src/main/assets/www/"
-              else
-                # Se ainda não encontrar, criar um básico
-                echo "Criando index.html básico..."
-                echo "<!DOCTYPE html>
-                <html>
-                <head>
-                  <title>$APP_NAME</title>
-                  <meta charset='UTF-8'>
-                  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-                  <style>
-                    body { margin:0; padding:0; background:#333; overflow:hidden; }
-                    canvas { display:block; margin:auto; background:#000; }
-                    #loading { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); color:white; font-family:Arial; text-align:center; }
-                  </style>
-                </head>
-                <body>
-                  <div id='loading'>Carregando $APP_NAME...</div>
-                  <canvas id='gameCanvas'></canvas>
-                  <script>
-                    const canvas = document.getElementById('gameCanvas');
-                    const loading = document.getElementById('loading');
-                    canvas.width = window.innerWidth;
-                    canvas.height = window.innerHeight;
-                    const ctx = canvas.getContext('2d');
-                    
-                    // Desenhar mensagem
-                    ctx.fillStyle = '#4CAF50';
-                    ctx.font = '24px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('$APP_NAME', canvas.width/2, canvas.height/2 - 20);
-                    ctx.font = '16px Arial';
-                    ctx.fillText('Jogo carregado com sucesso!', canvas.width/2, canvas.height/2 + 20);
-                    
-                    setTimeout(() => {
-                      loading.style.display = 'none';
-                    }, 2000);
-                  </script>
-                </body>
-                </html>" > app/src/main/assets/www/index.html
-                echo "✓ Criado index.html básico"
-              fi
-            else
-              echo "✓ index.html encontrado na raiz"
+               SUBFOLDER=$(find app/src/main/assets/www -name "index.html" -type f | xargs dirname | head -1)
+               if [ -n "$SUBFOLDER" ] && [ "$SUBFOLDER" != "app/src/main/assets/www" ]; then
+                  mv "$SUBFOLDER"/* app/src/main/assets/www/
+               fi
             fi
-          else
-            echo "Erro ao baixar ZIP, criando jogo de exemplo"
-            echo "<h1>$APP_NAME</h1><p>Seu jogo será carregado aqui.</p>" > app/src/main/assets/www/index.html
           fi
           
-          echo "Conteúdo extraído:"
-          ls -la app/src/main/assets/www/
+          # Fallback se index.html não existir após extração
+          if [ ! -f "app/src/main/assets/www/index.html" ]; then
+            echo "<html><body style='background:#000;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh'><h1>Carregando...</h1></body></html>" > app/src/main/assets/www/index.html
+          fi
 
       - name: Dar permissão ao Gradle Wrapper
-        run: |
-          chmod +x gradlew
-          echo "Permissões:"
-          ls -la gradlew
+        run: chmod +x gradlew
 
       - name: Compilar APK e AAB
         run: |
-          echo "=== INICIANDO COMPILAÇÃO ==="
-          
-          # Verificar se gradlew tem permissões
-          if [ ! -x "gradlew" ]; then
-            chmod +x gradlew
-          fi
-          
-          # Clean e build
-          ./gradlew clean --stacktrace
-          
-          # Construir APK
-          echo "Construindo APK..."
-          ./gradlew assembleRelease --stacktrace --no-daemon
-          
-          # Construir AAB
-          echo "Construindo AAB..."
-          ./gradlew bundleRelease --stacktrace --no-daemon
-          
-          echo "=== COMPILAÇÃO CONCLUÍDA ==="
-          
-          # Listar arquivos gerados
-          echo "APKs gerados:"
-          find app/build/outputs/apk -name "*.apk" -type f | xargs ls -la
-          echo "AABs gerados:"
-          find app/build/outputs/bundle -name "*.aab" -type f | xargs ls -la
+          ./gradlew clean
+          ./gradlew assembleRelease --no-daemon
+          ./gradlew bundleRelease --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: APK_${{ github.event.client_payload.app_id }}
           path: app/build/outputs/apk/release/*.apk
-          retention-days: 7
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: AAB_${{ github.event.client_payload.app_id }}
           path: app/build/outputs/bundle/release/*.aab
-          retention-days: 7
-
-      - name: Notificação de Sucesso
-        if: success()
-        run: |
-          echo "✅ Build concluído com sucesso!"
-          echo "App: ${{ github.event.client_payload.app_name }}"
-          echo "Package: ${{ github.event.client_payload.package_name }}"
-          echo "ID: ${{ github.event.client_payload.app_id }}"
