@@ -1,53 +1,40 @@
 name: Fabrica SAAS
+
 on:
   repository_dispatch:
     types: [build_event]
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     env:
-      # Variáveis de ambiente para o Gradle
       ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD || 'android' }}
       ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD || 'android' }}
       ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS || 'androiddebugkey' }}
+
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v4
-      
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-        
+
+      # =========================
+      # KEYSTORE (REPO OU DEBUG)
+      # =========================
       - name: Configurar Keystore
-        id: setup-keystore
         run: |
           echo "=== CONFIGURANDO KEYSTORE ==="
-          
-          # Assume que a chave já está no repositório em app/chave1.jks
-          KEYSTORE_PATH="app/chave1.jks"
-          
-          if [ -f "$KEYSTORE_PATH" ] && [ $(stat -c%s "$KEYSTORE_PATH") -gt 100 ]; then
-            echo "✅ Keystore encontrado no repositório ($KEYSTORE_PATH - $(stat -c%s "$KEYSTORE_PATH") bytes)"
-            
-            # Testa se o keystore é válido com a senha do secret
-            if keytool -list -keystore "$KEYSTORE_PATH" -storepass "${{ secrets.KEY_PASSWORD }}" 2>&1 | grep -q "Alias name"; then
-              echo "✅ Keystore válido e acessível"
-              echo "key_source=repo" >> $GITHUB_ENV
-              echo "ORG_GRADLE_PROJECT_storeFile=$KEYSTORE_PATH" >> $GITHUB_ENV
-            else
-              echo "❌ Keystore inválido ou senha incorreta - usando debug"
-              echo "key_source=debug" >> $GITHUB_ENV
-            fi
+
+          if [ -f app/chave1.jks ]; then
+            echo "Keystore do repositório encontrado"
+            echo "ORG_GRADLE_PROJECT_storeFile=chave1.jks" >> $GITHUB_ENV
           else
-            echo "❌ Keystore não encontrado ou inválido em $KEYSTORE_PATH - usando debug"
-            echo "key_source=debug" >> $GITHUB_ENV
-          fi
-          
-          # Se falhou, cria keystore debug
-          if [ "${{ env.key_source }}" = "debug" ]; then
-            echo "Criando keystore debug..."
+            echo "Criando keystore debug"
             keytool -genkeypair -v \
               -keystore app/keystore.jks \
               -alias androiddebugkey \
@@ -57,291 +44,68 @@ jobs:
               -storepass android \
               -keypass android \
               -dname "CN=Android Debug, O=Android, C=US"
-            
-            echo "DEBUG_MODE=true" >> $GITHUB_ENV
+
             echo "ORG_GRADLE_PROJECT_storeFile=keystore.jks" >> $GITHUB_ENV
-            echo "Keystore debug criado com sucesso"
           fi
-          
-          echo "=== STATUS FINAL ==="
-          echo "Fonte: ${{ env.key_source }}"
-          echo "Store File: ${{ env.ORG_GRADLE_PROJECT_storeFile }}"
-          ls -la app/*.jks 2>/dev/null || echo "Keystore não encontrado"
-        
-      - name: Personalizar Projeto (SED)
+
+      # =========================
+      # PERSONALIZAÇÃO
+      # =========================
+      - name: Personalizar Projeto
         run: |
-          echo "=== INICIANDO PERSONALIZAÇÃO ==="
-          echo "App Name: ${{ github.event.client_payload.app_name }}"
-          echo "Package: ${{ github.event.client_payload.package_name }}"
-          echo "App ID: ${{ github.event.client_payload.app_id }}"
-          
-          # Backup dos arquivos originais
-          cp app/build.gradle.kts app/build.gradle.kts.backup
-          
-          # 1. Troca o Nome do App
           sed -i "s/NOME_DINAMICO/${{ github.event.client_payload.app_name }}/g" app/src/main/res/values/strings.xml
-          
-          # 2. Troca o Package no Manifest (Apenas no nome da Activity)
           sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/src/main/AndroidManifest.xml
-          
-          # 3. Troca o Package no Gradle (O que corrige o erro do AAB)
           sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/build.gradle.kts
-          
-          # 4. Troca o Package no código Java
-          if [ -f "app/src/main/java/com/meuapp/jogo/MainActivity.java" ]; then
-            sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/src/main/java/com/meuapp/jogo/MainActivity.java
-          fi
-          
-          # 5. Procura e substitui em todos os arquivos Java/Kotlin
-          find app/src/main/java -name "*.java" -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; 2>/dev/null || true
-          find app/src/main/kotlin -name "*.kt" -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; 2>/dev/null || true
-          
-          # 6. Troca o Package no namespace do build.gradle.kts (crucial para AAB)
-          sed -i "s/namespace = \"PACOTE_DINAMICO\"/namespace = \"${{ github.event.client_payload.package_name }}\"/g" app/build.gradle.kts
-          
-          # 7. Troca o applicationId no build.gradle.kts
-          sed -i "s/applicationId = \"PACOTE_DINAMICO\"/applicationId = \"${{ github.event.client_payload.package_name }}\"/g" app/build.gradle.kts
-          
-          # Mostra o conteúdo atualizado para debug
-          echo "=== AndroidManifest.xml após atualização ==="
-          head -30 app/src/main/AndroidManifest.xml
-          
-          echo "=== build.gradle.kts após atualização ==="
-          head -40 app/build.gradle.kts
-          
-          echo "=== Verificação final do build.gradle ==="
-          grep -E "(namespace|applicationId)" app/build.gradle.kts
-        
-      - name: Download e Troca do Ícone
+
+          find app/src/main/java -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; || true
+
+      # =========================
+      # ÍCONE
+      # =========================
+      - name: Baixar e Aplicar Ícone
         run: |
-          echo "=== BAIXANDO ÍCONE ==="
-          echo "URL do ícone: ${{ github.event.client_payload.icon_url }}"
-          
-          # Tenta baixar o ícone
-          curl -A "Mozilla/5.0" -L "${{ github.event.client_payload.icon_url }}" -o icone_usuario.png 2>/dev/null || echo "AVISO: Não foi possível baixar o ícone"
-          
-          if [ -f icone_usuario.png ] && [ $(stat -c%s icone_usuario.png) -gt 100 ]; then
-            echo "Ícone baixado com sucesso ($(stat -c%s icone_usuario.png) bytes). Aplicando..."
-            find app/src/main/res/mipmap-* -name "ic_launcher.png" -exec cp icone_usuario.png {} \;
-            find app/src/main/res/mipmap-* -name "ic_launcher_round.png" -exec cp icone_usuario.png {} \;
-            # Substitui todos os ícones de launcher adicionais se existirem
-            find app/src/main/res -name "ic_launcher*.png" -type f | while read icon; do
-              cp icone_usuario.png "$icon"
-            done
-            echo "Ícone personalizado aplicado com sucesso!"
-          else
-            echo "Usando ícone padrão do template."
+          curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png || true
+          if [ -f icon.png ]; then
+            find app/src/main/res -name "ic_launcher*.png" -exec cp icon.png {} \;
           fi
-          
-          echo "=== Ícones disponíveis ==="
-          find app/src/main/res -name "ic_launcher*.png" -exec ls -la {} \;
-        
-      - name: Limpar e Extrair Projeto do Jogo
+
+      # =========================
+      # JOGO
+      # =========================
+      - name: Extrair Jogo
         run: |
-          echo "=== CONFIGURANDO JOGO ==="
-          
-          # 1. Garante que a pasta assets/www existe
           mkdir -p app/src/main/assets/www
-          
-          # 2. Limpa a pasta se já existir conteúdo
           rm -rf app/src/main/assets/www/*
-          
-          # 3. Baixa o ZIP do jogo
-          if [ -n "${{ github.event.client_payload.zip_url }}" ]; then
-            echo "Baixando jogo da URL: ${{ github.event.client_payload.zip_url }}"
-            curl -L "${{ github.event.client_payload.zip_url }}" -o jogo.zip 2>/dev/null || echo "Erro ao baixar ZIP"
+
+          curl -L "${{ github.event.client_payload.zip_url }}" -o jogo.zip
+          unzip -o jogo.zip -d app/src/main/assets/www/
+
+          if [ ! -f app/src/main/assets/www/index.html ]; then
+            echo "<h1>Jogo carregado</h1>" > app/src/main/assets/www/index.html
           fi
-          
-          # 4. Extrai o ZIP se existir
-          if [ -f "jogo.zip" ]; then
-            echo "Extraindo conteúdo do jogo..."
-            unzip -o jogo.zip -d app/src/main/assets/www/ 2>/dev/null || echo "AVISO: Problema ao extrair ZIP"
-            
-            # 5. Verifica se o index.html foi extraído
-            if [ ! -f "app/src/main/assets/www/index.html" ]; then
-              echo "Procurando arquivo principal..."
-              # Encontra o primeiro arquivo HTML
-              HTML_FILE=$(find app/src/main/assets/www -name "*.html" -o -name "*.htm" | head -1)
-              
-              if [ -n "$HTML_FILE" ]; then
-                echo "Renomeando $HTML_FILE para index.html"
-                mv "$HTML_FILE" app/src/main/assets/www/index.html
-              else
-                echo "Criando index.html padrão"
-                echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Jogo</title></head><body><h1>Jogo Construct 3</h1><p>Conteúdo carregado com sucesso.</p></body></html>' > app/src/main/assets/www/index.html
-              fi
-            fi
-          else
-            echo "Criando conteúdo de exemplo"
-            echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Jogo</title></head><body><h1>Meu Jogo</h1><p>Jogo construído com sucesso!</p></body></html>' > app/src/main/assets/www/index.html
-          fi
-          
-          echo "=== ESTRUTURA DO JOGO ==="
-          ls -la app/src/main/assets/www/
-          echo "=== PRIMEIROS ARQUIVOS ==="
-          find app/src/main/assets/www -type f | head -10
-        
-      - name: Dar permissão ao Gradle
+
+      - name: Permissão Gradle
         run: chmod +x gradlew
-      
-      - name: Compilar APK e AAB (Release)
+
+      # =========================
+      # BUILD (ASSINADO PELO GRADLE)
+      # =========================
+      - name: Build APK e AAB
         run: |
-          echo "=== INICIANDO COMPILAÇÃO ==="
-          
-          # Mostra variáveis de ambiente para debug
-          echo "ORG_GRADLE_PROJECT_storePassword: $ORG_GRADLE_PROJECT_storePassword"
-          echo "ORG_GRADLE_PROJECT_keyPassword: $ORG_GRADLE_PROJECT_keyPassword"
-          echo "ORG_GRADLE_PROJECT_keyAlias: $ORG_GRADLE_PROJECT_keyAlias"
-          echo "ORG_GRADLE_PROJECT_storeFile: $ORG_GRADLE_PROJECT_storeFile"
-          
-          # Limpa build anterior
           ./gradlew clean
-          
-          # Compila
-          ./gradlew assembleRelease bundleRelease --stacktrace --info
-        
-      - name: Verificar se os arquivos foram gerados
-        run: |
-          echo "=== VERIFICANDO ARQUIVOS GERADOS ==="
-          
-          echo "1. Procurando APKs..."
-          find app/build/outputs -name "*.apk" 2>/dev/null | xargs ls -la || echo "Nenhum APK encontrado"
-          
-          echo "2. Procurando AABs..."
-          find app/build/outputs -name "*.aab" 2>/dev/null | xargs ls -la || echo "Nenhum AAB encontrado"
-          
-          echo "3. Conteúdo das pastas de release:"
-          ls -la app/build/outputs/apk/release/ 2>/dev/null || echo "Pasta APK release não existe"
-          ls -la app/build/outputs/bundle/release/ 2>/dev/null || echo "Pasta AAB release não existe"
-        
-      - name: Assinar Arquivos APK
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: app/build/outputs/apk/release/
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}  # Manter se necessário, mas como a chave está no repo, pode não ser usado
-          alias: ${{ env.ORG_GRADLE_PROJECT_keyAlias }}
-          keyStorePassword: ${{ env.ORG_GRADLE_PROJECT_storePassword }}
-          keyPassword: ${{ env.ORG_GRADLE_PROJECT_keyPassword }}
-        id: sign_app
-        continue-on-error: true
-        
-      - name: Upload APK Assinado
-        if: steps.sign_app.outcome == 'success'
+          ./gradlew assembleRelease bundleRelease
+
+      # =========================
+      # UPLOAD
+      # =========================
+      - name: Upload APK Release
         uses: actions/upload-artifact@v4
         with:
           name: APK_${{ github.event.client_payload.app_id }}
-          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
-          retention-days: 7
-          if-no-files-found: warn
-        
-      - name: Upload APK Não Assinado (Fallback)
-        if: steps.sign_app.outcome != 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: APK_UNSIGNED_${{ github.event.client_payload.app_id }}
           path: app/build/outputs/apk/release/*.apk
-          retention-days: 7
-          if-no-files-found: warn
-        
-      - name: Upload AAB para Play Store
+
+      - name: Upload AAB Release
         uses: actions/upload-artifact@v4
         with:
           name: AAB_${{ github.event.client_payload.app_id }}
           path: app/build/outputs/bundle/release/*.aab
-          retention-days: 7
-          if-no-files-found: warn
-        
-      # Passo para notificar o sistema principal sobre a conclusão do build
-      - name: Notificar Sistema Principal
-        if: success() && github.event.client_payload.callback_url != ''
-        run: |
-          echo "=== ENVIANDO NOTIFICAÇÃO DE SUCESSO ==="
-          
-          # Obter nome do arquivo AAB
-          AAB_FILE=$(ls app/build/outputs/bundle/release/*.aab 2>/dev/null | head -n1 | xargs basename 2>/dev/null || echo "app-release.aab")
-          
-          # Montar payload da notificação
-          JSON_PAYLOAD=$(cat << EOF
-          {
-            "status": "success",
-            "app_id": "${{ github.event.client_payload.app_id }}",
-            "app_name": "${{ github.event.client_payload.app_name }}",
-            "package_name": "${{ github.event.client_payload.package_name }}",
-            "run_id": "${{ github.run_id }}",
-            "run_number": "${{ github.run_number }}",
-            "repository": "${{ github.repository }}",
-            "commit_sha": "${{ github.sha }}",
-            "apk_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?name=APK_${{ github.event.client_payload.app_id }}",
-            "aab_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?name=AAB_${{ github.event.client_payload.app_id }}",
-            "logs_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "artifact_names": {
-              "apk": "APK_${{ github.event.client_payload.app_id }}",
-              "aab": "AAB_${{ github.event.client_payload.app_id }}"
-            },
-            "aab_filename": "$AAB_FILE"
-          }
-          EOF
-          )
-          
-          echo "Payload: $JSON_PAYLOAD"
-          echo "URL: ${{ github.event.client_payload.callback_url }}"
-          
-          # Enviar notificação
-          curl -X POST "${{ github.event.client_payload.callback_url }}" \
-            -H "Content-Type: application/json" \
-            -d "$JSON_PAYLOAD" \
-            --max-time 30 \
-            --retry 2 \
-            --retry-delay 5 \
-            --fail-with-body \
-            --silent \
-            --output /dev/null \
-            --write-out "Status: %{http_code}\n" || echo "AVISO: Falha ao enviar notificação de sucesso"
-        
-      # Passo para lidar com falhas
-      - name: Notificar Falha
-        if: failure() && github.event.client_payload.callback_url != ''
-        run: |
-          echo "=== ENVIANDO NOTIFICAÇÃO DE FALHA ==="
-          
-          # Montar payload da notificação de erro
-          JSON_PAYLOAD=$(cat << EOF
-          {
-            "status": "error",
-            "app_id": "${{ github.event.client_payload.app_id }}",
-            "app_name": "${{ github.event.client_payload.app_name }}",
-            "package_name": "${{ github.event.client_payload.package_name }}",
-            "error": "Falha no processo de build - verifique os logs para detalhes",
-            "logs_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-            "run_id": "${{ github.run_id }}",
-            "run_number": "${{ github.run_number }}",
-            "repository": "${{ github.repository }}",
-            "commit_sha": "${{ github.sha }}",
-            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          }
-          EOF
-          )
-          
-          echo "Payload de erro: $JSON_PAYLOAD"
-          echo "URL: ${{ github.event.client_payload.callback_url }}"
-          
-          # Enviar notificação de erro
-          curl -X POST "${{ github.event.client_payload.callback_url }}" \
-            -H "Content-Type: application/json" \
-            -d "$JSON_PAYLOAD" \
-            --max-time 30 \
-            --retry 2 \
-            --retry-delay 5 \
-            --fail-with-body \
-            --silent \
-            --output /dev/null \
-            --write-out "Status: %{http_code}\n" || echo "AVISO: Falha ao enviar notificação de erro"
-        
-      - name: Limpeza Final
-        if: always()
-        run: |
-          echo "=== LIMPEZA FINAL ==="
-          echo "Removendo arquivos temporários..."
-          rm -f jogo.zip icone_usuario.png game.zip icon.png 2>/dev/null || true
-          echo "Build finalizado com status: ${{ job.status }}"
