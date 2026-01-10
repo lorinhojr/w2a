@@ -15,19 +15,53 @@ android {
         versionName = "1.0"
     }
 
+    /**
+     * ===============================
+     * ASSINATURA (USANDO ENV VARS)
+     * ===============================
+     * Essas variáveis vêm direto do GitHub Actions:
+     *
+     * ORG_GRADLE_PROJECT_storeFile
+     * ORG_GRADLE_PROJECT_storePassword
+     * ORG_GRADLE_PROJECT_keyAlias
+     * ORG_GRADLE_PROJECT_keyPassword
+     */
+    signingConfigs {
+        create("release") {
+            val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
+
+            if (storeFilePath != null && storeFilePath.isNotBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword")
+                keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias")
+                keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword")
+            }
+        }
+    }
+
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+
+        getByName("debug") {
+            // debug continua usando a debug.keystore automática
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = "11"
     }
 }
 
