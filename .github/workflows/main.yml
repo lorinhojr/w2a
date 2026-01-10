@@ -111,6 +111,114 @@ jobs:
             fi
           fi
           
+          # ===== PROGUARD =====
+          echo "Atualizando proguard-rules.pro"
+          if [ -f "app/proguard-rules.pro" ]; then
+            # Verificar se o arquivo já tem a regra da MainActivity
+            if grep -q "PACOTE_DINAMICO.MainActivity" app/proguard-rules.pro; then
+              sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
+              echo "✓ proguard-rules.pro atualizado (placeholder substituído)"
+            else
+              # Adicionar a regra da MainActivity no final do arquivo
+              echo "" >> app/proguard-rules.pro
+              echo "# Regra para manter a MainActivity" >> app/proguard-rules.pro
+              echo "-keep class $PKG.MainActivity { *; }" >> app/proguard-rules.pro
+              echo "✓ Regra da MainActivity adicionada ao proguard-rules.pro"
+            fi
+          else
+            echo "⚠ proguard-rules.pro não encontrado, criando..."
+            # Criar arquivo proguard-rules.pro com regras básicas
+            cat > app/proguard-rules.pro << 'EOF'
+# Add project specific ProGuard rules here.
+# You can control the set of applied configuration files using the
+# proguardFiles setting in build.gradle.
+#
+# For more details, see
+#   http://developer.android.com/guide/developing/tools/proguard.html
+
+# If your project uses WebView with JS, uncomment the following
+# and specify the fully qualified class name to the JavaScript interface
+# class:
+#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
+#   public *;
+#}
+
+# Uncomment this to preserve the line number information for
+# debugging stack traces.
+#-keepattributes SourceFile,LineNumberTable
+
+# If you keep the line number information, uncomment this to
+# hide the original source file name.
+#-renamesourcefileattribute SourceFile
+
+# ====================================================
+# Regras específicas para WebView e Construct/HTML5
+# ====================================================
+
+# Manter classes do WebView e WebKit
+-keep class org.chromium.** { *; }
+-dontwarn org.chromium.**
+
+# Manter classes de WebViewClient e WebChromeClient
+-keep class * extends android.webkit.WebChromeClient { *; }
+-keep class * extends android.webkit.WebViewClient { *; }
+-keepclassmembers class * extends android.webkit.WebView {
+    public *;
+}
+
+# Manter WebViewAssetLoader
+-keep class androidx.webkit.** { *; }
+-dontwarn androidx.webkit.**
+
+# Manter JavaScript interfaces
+-keepattributes *Annotation*
+-keepattributes JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Manter atividades, serviços e receptores de broadcast
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+
+# Manter métodos nativos
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# Manter enums
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# Manter parcelable
+-keep class * implements android.os.Parcelable {
+  public static final android.os.Parcelable$Creator *;
+}
+
+# Manter serializable
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
+
+# Manter classes R (resources)
+-keep class **.R$* { *; }
+
+# Manter a MainActivity principal
+-keep class PACOTE_DINAMICO.MainActivity { *; }
+EOF
+            # Agora substitua o placeholder
+            sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
+            echo "✓ proguard-rules.pro criado e atualizado"
+          fi
+          
           echo "================================"
           echo "PERSONALIZAÇÃO CONCLUÍDA"
           echo "================================"
