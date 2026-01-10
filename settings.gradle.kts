@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "My ApplicationBase"
+rootProject.name = "W2A"
 include(":app")
