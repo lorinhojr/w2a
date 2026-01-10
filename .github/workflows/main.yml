@@ -47,28 +47,26 @@ jobs:
           sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/build.gradle.kts
           find app/src/main/java -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; || true
 
-      - name: Aplicar ícone com renomeação
+      # =========================
+      # ÍCONE (WEBP – SEM ADAPTIVE ICON)
+      # =========================
+      - name: Download e Aplicação do Ícone
         run: |
-          for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            mv app/src/main/res/$dir/ic_launcher.webp app/src/main/res/$dir/ic_launcher_old.webp || true
-            cp icon.webp app/src/main/res/$dir/ic_launcher.webp
+          echo "=== BAIXANDO ÍCONE ==="
       
-            mv app/src/main/res/$dir/ic_launcher_round.webp app/src/main/res/$dir/ic_launcher_round_old.webp || true
-            cp icon.webp app/src/main/res/$dir/ic_launcher_round.webp
-          done
-
-      - name: Baixar ícone e converter
-        run: |
-          curl -L -H "User-Agent: Mozilla/5.0" -H "Accept: image/*" --fail "${{ github.event.client_payload.icon_url }}" -o icon.png
-          sudo apt-get update
-          sudo apt-get install -y webp
-          cwebp -q 100 icon.png -o icon.webp
-
-      - name: Substituir ícones
-        run: |
-          for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            cp icon.webp app/src/main/res/$dir/ic_launcher.webp
-            cp icon.webp app/src/main/res/$dir/ic_launcher_round.webp
+          curl -L \
+            -H "User-Agent: Mozilla/5.0" \
+            --fail \
+            "${{ github.event.client_payload.icon_url }}" \
+            -o ic_launcher.webp
+      
+          echo "=== SUBSTITUINDO ÍCONES ==="
+      
+          for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            BASE="app/src/main/res/mipmap-$dir"
+      
+            [ -f "$BASE/ic_launcher.webp" ] && cp ic_launcher.webp "$BASE/ic_launcher.webp"
+            [ -f "$BASE/ic_launcher_round.webp" ] && cp ic_launcher.webp "$BASE/ic_launcher_round.webp"
           done
 
       - name: Extrair jogo
