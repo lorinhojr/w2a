@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "PACOTE_DINAMICO" // Placeholder que será substituído dinamicamente
+    namespace = "PACOTE_DINAMICO"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "PACOTE_DINAMICO" // Placeholder que será substituído dinamicamente
+        applicationId = "PACOTE_DINAMICO"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -19,7 +19,6 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("keystore.jks")
-            // Variáveis de ambiente configuradas nos Secrets do GitHub Actions
             storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: ""
             keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: ""
             keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: ""
