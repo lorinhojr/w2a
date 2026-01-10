@@ -185,6 +185,7 @@ jobs:
           find app/build/outputs/bundle -name "*.aab" -type f | xargs ls -la
 
       - name: Upload dos Artefatos
+        id: upload-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Build_${{ github.event.client_payload.app_id }}
@@ -193,44 +194,164 @@ jobs:
             app/build/outputs/bundle/release/*.aab
           retention-days: 7
 
-      - name: Enviar Callback de Status
-        if: always()
+      - name: Gerar Links de Download
+        id: generate-links
+        if: success()
         run: |
-          echo "=== ENVIANDO CALLBACK ==="
+          echo "=== GERANDO LINKS DE DOWNLOAD ==="
+          
+          APP_ID="${{ github.event.client_payload.app_id }}"
+          REPO="${{ github.repository }}"
+          RUN_ID="${{ github.run_id }}"
+          
+          # Link direto para a página específica do run (com artifacts)
+          RUN_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
+          
+          # Link para o ZIP do artefato (via nightly.link)
+          ARTIFACT_NAME="Build_$APP_ID"
+          DOWNLOAD_URL="https://nightly.link/$REPO/actions/runs/$RUN_ID/$ARTIFACT_NAME.zip"
+          
+          # Links individuais (opcional)
+          APK_DOWNLOAD_URL="https://nightly.link/$REPO/actions/runs/$RUN_ID/APK_$APP_ID.zip"
+          AAB_DOWNLOAD_URL="https://nightly.link/$REPO/actions/runs/$RUN_ID/AAB_$APP_ID.zip"
+          
+          echo "📦 Nome do Artefato: $ARTIFACT_NAME"
+          echo "🔗 URL do Run: $RUN_URL"
+          echo "📥 URL de Download: $DOWNLOAD_URL"
+          echo "📱 URL APK: $APK_DOWNLOAD_URL"
+          echo "📦 URL AAB: $AAB_DOWNLOAD_URL"
+          
+          # Salvar URLs como outputs
+          echo "run_url=$RUN_URL" >> $GITHUB_OUTPUT
+          echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "apk_url=$APK_DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "aab_url=$AAB_DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+      - name: Enviar Callback de Sucesso
+        if: success() && steps.upload-artifacts.outcome == 'success'
+        run: |
+          echo "=== ENVIANDO CALLBACK DE SUCESSO ==="
           
           APP_ID="${{ github.event.client_payload.app_id }}"
           CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
           
           if [ -n "$CALLBACK_URL" ] && [ -n "$APP_ID" ]; then
-            echo "URL do Callback: $CALLBACK_URL"
+            echo "📤 URL do Callback: $CALLBACK_URL"
             
-            if [ "${{ job.status }}" == "success" ]; then
-              STATUS="success"
-              MESSAGE="Build concluído com sucesso!"
-            else
-              STATUS="failure"
-              MESSAGE="Build falhou"
-            fi
+            # Usar URLs geradas no passo anterior
+            RUN_URL="${{ steps.generate-links.outputs.run_url }}"
+            DOWNLOAD_URL="${{ steps.generate-links.outputs.download_url }}"
+            APK_URL="${{ steps.generate-links.outputs.apk_url }}"
+            AAB_URL="${{ steps.generate-links.outputs.aab_url }}"
+            ARTIFACT_NAME="${{ steps.generate-links.outputs.artifact_name }}"
             
             REPO="${{ github.repository }}"
             RUN_ID="${{ github.run_id }}"
-            RUN_URL="${{ github.server_url }}/$REPO/actions/runs/$RUN_ID"
             
+            # Payload completo
+            PAYLOAD=$(cat << EOF
+{
+  "app_id": "$APP_ID",
+  "status": "success",
+  "message": "Build concluído com sucesso!",
+  "run_id": "$RUN_ID",
+  "run_url": "$RUN_URL",
+  "repository": "$REPO",
+  "download_url": "$DOWNLOAD_URL",
+  "apk_url": "$APK_URL",
+  "aab_url": "$AAB_URL",
+  "artifact_name": "$ARTIFACT_NAME",
+  "build_time": "$(date -Iseconds)",
+  "workflow": "${{ github.workflow }}"
+}
+EOF
+            )
+            
+            echo "📦 Payload a ser enviado:"
+            echo "$PAYLOAD"
+            
+            # Enviar callback com timeout e retry
+            for i in {1..3}; do
+              echo "🔄 Tentativa $i/3..."
+              
+              HTTP_CODE=$(curl -X POST "$CALLBACK_URL" \
+                -H "Content-Type: application/json" \
+                -H "User-Agent: GitHub-Actions-W2A-Builder" \
+                -d "$PAYLOAD" \
+                --max-time 30 \
+                --retry 2 \
+                --retry-delay 5 \
+                --write-out "%{http_code}" \
+                --silent --show-error \
+                --output /tmp/curl_response.txt)
+              
+              RESPONSE=$(cat /tmp/curl_response.txt)
+              echo "📡 Resposta ($i): HTTP $HTTP_CODE"
+              
+              if [[ "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+                echo "✅ Callback enviado com sucesso!"
+                break
+              else
+                echo "⚠️ Falha HTTP $HTTP_CODE"
+                if [ $i -lt 3 ]; then
+                  echo "⏳ Aguardando 5 segundos..."
+                  sleep 5
+                else
+                  echo "❌ Todas as tentativas falharam"
+                  echo "📝 Links disponíveis (usuário pode acessar manualmente):"
+                  echo "   🔗 Run: $RUN_URL"
+                  echo "   📥 Download: $DOWNLOAD_URL"
+                fi
+              fi
+            done
+          else
+            echo "⚠️ Sem URL de callback configurada"
+            echo "📝 Links do build:"
+            echo "   🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+
+      - name: Enviar Callback de Falha
+        if: failure()
+        run: |
+          echo "=== ENVIANDO CALLBACK DE FALHA ==="
+          
+          APP_ID="${{ github.event.client_payload.app_id }}"
+          CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
+          
+          if [ -n "$CALLBACK_URL" ] && [ -n "$APP_ID" ]; then
+            echo "📤 URL do Callback: $CALLBACK_URL"
+            
+            REPO="${{ github.repository }}"
+            RUN_ID="${{ github.run_id }}"
+            RUN_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
+            
+            PAYLOAD=$(cat << EOF
+{
+  "app_id": "$APP_ID",
+  "status": "failure",
+  "message": "Build falhou. Verifique os logs para mais detalhes.",
+  "run_id": "$RUN_ID",
+  "run_url": "$RUN_URL",
+  "repository": "$REPO",
+  "build_time": "$(date -Iseconds)",
+  "workflow": "${{ github.workflow }}"
+}
+EOF
+            )
+            
+            echo "📦 Payload a ser enviado:"
+            echo "$PAYLOAD"
+            
+            # Enviar callback (apenas 1 tentativa para falhas)
             curl -X POST "$CALLBACK_URL" \
               -H "Content-Type: application/json" \
-              -d "{
-                \"app_id\": \"$APP_ID\",
-                \"status\": \"$STATUS\",
-                \"message\": \"$MESSAGE\",
-                \"run_id\": \"$RUN_ID\",
-                \"run_url\": \"$RUN_URL\",
-                \"repository\": \"$REPO\",
-                \"timestamp\": \"$(date -Iseconds)\"
-              }" \
-              --max-time 10 \
+              -H "User-Agent: GitHub-Actions-W2A-Builder" \
+              -d "$PAYLOAD" \
+              --max-time 30 \
               --silent --show-error \
-              && echo "✅ Callback enviado" \
-              || echo "⚠ Callback falhou (build ainda concluído)"
+              && echo "✅ Callback de falha enviado" \
+              || echo "⚠️ Callback de falha não enviado"
           else
-            echo "⚠ Sem callback configurado"
+            echo "⚠️ Sem URL de callback configurada"
           fi
