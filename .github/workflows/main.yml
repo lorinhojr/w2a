@@ -152,7 +152,6 @@ jobs:
             fi
           fi
 
-          # Correção da linha 159 (Aspas protegidas)
           if [ ! -f "app/src/main/assets/www/index.html" ]; then
             echo "<html><body style='background:#000;color:#fff'><h1>Carregando...</h1></body></html>" > app/src/main/assets/www/index.html
           fi
@@ -168,18 +167,14 @@ jobs:
         run: |
           echo "=== COMPILANDO ==="
           
-          # DEBUG: Mostra a estrutura do projeto
           echo "Estrutura do app/build.gradle.kts:"
           grep -n "signingConfigs\|buildTypes" app/build.gradle.kts || true
           
-          # Limpa primeiro
           ./gradlew clean
           
-          # Build APK Release
           echo "Construindo APK..."
           ./gradlew assembleRelease --no-daemon --stacktrace
           
-          # Build AAB Release  
           echo "Construindo AAB..."
           ./gradlew bundleRelease --no-daemon --stacktrace
           
@@ -198,23 +193,17 @@ jobs:
             app/build/outputs/bundle/release/*.aab
           retention-days: 7
 
-      - name: Notificação Final
+      - name: Enviar Callback de Status
         if: always()
         run: |
-          echo "Build Finalizado. Status: ${{ job.status }}"
-
-            - name: Enviar Notificação de Status
-        if: always()
-        run: |
-          echo "=== ENVIANDO NOTIFICAÇÃO ==="
+          echo "=== ENVIANDO CALLBACK ==="
           
           APP_ID="${{ github.event.client_payload.app_id }}"
           CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
           
           if [ -n "$CALLBACK_URL" ] && [ -n "$APP_ID" ]; then
-            echo "Enviando para: $CALLBACK_URL"
+            echo "URL do Callback: $CALLBACK_URL"
             
-            # Determinar status
             if [ "${{ job.status }}" == "success" ]; then
               STATUS="success"
               MESSAGE="Build concluído com sucesso!"
@@ -223,13 +212,11 @@ jobs:
               MESSAGE="Build falhou"
             fi
             
-            # Dados do build
             REPO="${{ github.repository }}"
             RUN_ID="${{ github.run_id }}"
             RUN_URL="${{ github.server_url }}/$REPO/actions/runs/$RUN_ID"
             
-            # Tenta enviar, mas não falha o build se não conseguir
-            if curl -X POST "$CALLBACK_URL" \
+            curl -X POST "$CALLBACK_URL" \
               -H "Content-Type: application/json" \
               -d "{
                 \"app_id\": \"$APP_ID\",
@@ -240,14 +227,10 @@ jobs:
                 \"repository\": \"$REPO\",
                 \"timestamp\": \"$(date -Iseconds)\"
               }" \
-              --max-time 15 \
-              --retry 2 \
-              --silent --show-error; then
-              echo "✅ Callback enviado com sucesso"
-            else
-              echo "⚠ Callback falhou, mas o build foi concluído"
-              echo "⚠ O usuário ainda pode baixar os arquivos na aba 'Artifacts' do GitHub"
-            fi
+              --max-time 10 \
+              --silent --show-error \
+              && echo "✅ Callback enviado" \
+              || echo "⚠ Callback falhou (build ainda concluído)"
           else
-            echo "⚠ Sem URL de callback ou App ID - Notificação não enviada"
+            echo "⚠ Sem callback configurado"
           fi
