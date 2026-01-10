@@ -13,6 +13,59 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+      - name: Configurar Keystore
+        id: setup-keystore
+        run: |
+          echo "=== CONFIGURANDO KEYSTORE ==="
+          
+          # 1. Tenta usar o keystore do segredo
+          if [ -n "${{ secrets.SIGNING_KEY_BASE64 }}" ]; then
+            echo "Decodificando keystore do segredo..."
+            echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 --decode > app/keystore.jks 2>/dev/null
+            
+            # Verifica se o arquivo não está vazio
+            if [ -s app/keystore.jks ]; then
+              echo "✅ Keystore do segredo carregado ($(stat -c%s app/keystore.jks) bytes)"
+              
+              # Testa se o keystore é válido
+              if keytool -list -keystore app/keystore.jks -storepass "${{ secrets.KEY_PASSWORD }}" 2>&1 | grep -q "Alias name"; then
+                echo "✅ Keystore válido e acessível"
+                echo "key_source=secret" >> $GITHUB_ENV
+              else
+                echo "❌ Keystore inválido ou senha incorreta"
+                echo "key_source=invalid" >> $GITHUB_ENV
+              fi
+            else
+              echo "❌ Keystore decodificado está vazio"
+              echo "key_source=empty" >> $GITHUB_ENV
+            fi
+          else
+            echo "❌ Segredo SIGNING_KEY_BASE64 não definido"
+            echo "key_source=missing" >> $GITHUB_ENV
+          fi
+          
+          # 2. Se o keystore do segredo falhou, cria um keystore debug
+          if [ "${{ env.key_source }}" != "secret" ]; then
+            echo "Criando keystore debug para continuar o build..."
+            keytool -genkeypair -v \
+              -keystore app/keystore.jks \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug, O=Android, C=US"
+            
+            echo "key_source=debug" >> $GITHUB_ENV
+            echo "DEBUG_KEY_PASSWORD=android" >> $GITHUB_ENV
+            echo "DEBUG_KEY_ALIAS=androiddebugkey" >> $GITHUB_ENV
+          fi
+          
+          # Debug: Mostra informações finais
+          echo "=== STATUS DO KEYSTORE ==="
+          echo "Fonte da chave: ${{ env.key_source }}"
+          ls -la app/keystore.jks 2>/dev/null || echo "Keystore não encontrado"
       - name: Personalizar Projeto (SED)
         run: |
           echo "=== INICIANDO PERSONALIZAÇÃO ==="
@@ -117,38 +170,28 @@ jobs:
           find app/src/main/assets/www -type f | head -10
       - name: Dar permissão ao Gradle
         run: chmod +x gradlew
-      - name: Configurar keystore para assinatura
-        run: |
-          echo "=== CONFIGURANDO KEYSTORE ==="
-          # Tenta decodificar o keystore de produção
-          echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 --decode > app/keystore.jks 2>/dev/null
-          
-          # Verifica se o keystore foi criado corretamente
-          if [ -f app/keystore.jks ] && [ $(stat -c%s app/keystore.jks) -gt 100 ]; then
-            echo "Keystore de produção configurado com sucesso: $(ls -la app/keystore.jks)"
-          else
-            echo "AVISO: Keystore de produção inválido ou não fornecido. Criando keystore debug para teste."
-            keytool -genkey -v \
-              -keystore app/keystore.jks \
-              -alias androiddebugkey \
-              -storepass android \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-            echo "Keystore debug criado: $(ls -la app/keystore.jks)"
-          fi
       - name: Compilar APK e AAB (Release)
         run: |
           echo "=== INICIANDO COMPILAÇÃO ==="
           ./gradlew clean
-          ./gradlew assembleRelease bundleRelease --stacktrace --info
-        env:
-          ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD || 'android' }}
-          ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD || 'android' }}
-          ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS || 'androiddebugkey' }}
-          ORG_GRADLE_PROJECT_storeFile: keystore.jks
+          
+          if [ "${{ env.key_source }}" = "secret" ]; then
+            echo "🔐 Compilando com keystore de produção..."
+            ./gradlew assembleRelease bundleRelease \
+              -PstorePassword="${{ secrets.KEY_PASSWORD }}" \
+              -PkeyPassword="${{ secrets.KEY_PASSWORD }}" \
+              -PkeyAlias="${{ secrets.ALIAS }}" \
+              -PstoreFile=keystore.jks \
+              --stacktrace --info
+          else
+            echo "🔓 Compilando com keystore debug..."
+            ./gradlew assembleRelease bundleRelease \
+              -PstorePassword="android" \
+              -PkeyPassword="android" \
+              -PkeyAlias="androiddebugkey" \
+              -PstoreFile=keystore.jks \
+              --stacktrace --info
+          fi
       - name: Verificar se os arquivos foram gerados
         run: |
           echo "=== VERIFICANDO ARQUIVOS GERADOS ==="
@@ -167,9 +210,9 @@ jobs:
         with:
           releaseDirectory: app/build/outputs/apk/release/
           signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS || 'androiddebugkey' }}
-          keyStorePassword: ${{ secrets.KEY_PASSWORD || 'android' }}
-          keyPassword: ${{ secrets.KEY_PASSWORD || 'android' }}
+          alias: ${{ env.DEBUG_KEY_ALIAS || secrets.ALIAS }}
+          keyStorePassword: ${{ env.DEBUG_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+          keyPassword: ${{ env.DEBUG_KEY_PASSWORD || secrets.KEY_PASSWORD }}
         id: sign_app
         continue-on-error: true
       - name: Upload APK Assinado
@@ -231,7 +274,7 @@ jobs:
           echo "Payload: $JSON_PAYLOAD"
           echo "URL: ${{ github.event.client_payload.callback_url }}"
           
-          # Enviar notificação (sem Authorization header, assumindo URL externa)
+          # Enviar notificação (sem Authorization header)
           curl -X POST "${{ github.event.client_payload.callback_url }}" \
             -H "Content-Type: application/json" \
             -d "$JSON_PAYLOAD" \
@@ -285,5 +328,5 @@ jobs:
         run: |
           echo "=== LIMPEZA FINAL ==="
           echo "Removendo arquivos temporários..."
-          rm -f jogo.zip icone_usuario.png 2>/dev/null || true
+          rm -f jogo.zip icone_usuario.png game.zip icon.png 2>/dev/null || true
           echo "Build finalizado com status: ${{ job.status }}"
