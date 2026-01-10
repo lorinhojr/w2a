@@ -20,43 +20,54 @@ android {
     }
 
     /**
-     * ASSINATURA FIXA - SEM FALLBACK BUGADO
+     * ASSINATURA SIMPLES E DIRETA
      */
     signingConfigs {
         create("release") {
-            // Procura o keystore na raiz do projeto app/
-            val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
+            // Verifica se existe chave1.jks no diretório do app
+            val keystoreFile = file("chave1.jks")
             
-            if (storeFilePath != null && storeFilePath.isNotBlank()) {
-                // Se encontrar, configura a assinatura
-                storeFile = file(storeFilePath)
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
                 storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: "android"
                 keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: "androiddebugkey"
                 keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: "android"
+                println("✅ Usando chave1.jks para assinatura")
+            } else {
+                // Tenta usar variável de ambiente
+                val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
+                if (storeFilePath != null && storeFilePath.isNotBlank()) {
+                    storeFile = file(storeFilePath)
+                    storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: "android"
+                    keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: "androiddebugkey"
+                    keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: "android"
+                    println("✅ Usando keystore de variável: $storeFilePath")
+                } else {
+                    println("⚠ Nenhum keystore configurado, usando debug.keystore padrão")
+                }
             }
-            // Se não encontrar, NÃO CONFIGURA - vai usar debug
         }
     }
-    
+
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
             
-            // Só usa signing config se estiver configurado
-            val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
-            if (storeFilePath != null && storeFilePath.isNotBlank() && 
-                signingConfigs.findByName("release")?.storeFile?.exists() == true) {
+            // Só usa signing se tiver configurado
+            if (signingConfigs.findByName("release")?.storeFile?.exists() == true) {
                 signingConfig = signingConfigs.getByName("release")
+                println("✅ Build release será assinado")
+            } else {
+                println("⚠ Build release não será assinado (usará debug)")
             }
-            // Se não configurar, Gradle usa debug.keystore automático
-    
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-    
+
         getByName("debug") {
             isDebuggable = true
         }
@@ -71,9 +82,10 @@ android {
         jvmTarget = "11"
     }
     
-    aaptOptions {
-        cruncherEnabled = false
-    }
+    // REMOVE A APPTIONS DEPRECIADA
+    // aaptOptions {
+    //     cruncherEnabled = false
+    // }
 }
 
 dependencies {
