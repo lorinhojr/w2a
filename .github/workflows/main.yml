@@ -14,6 +14,36 @@ jobs:
       ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS || 'androiddebugkey' }}
 
     steps:
+      - name: Personalização TOTAL (igual Construct)
+        run: |
+          PKG="${{ github.event.client_payload.package_name }}"
+          APP_NAME="${{ github.event.client_payload.app_name }}"
+      
+          PKG_PATH=$(echo "$PKG" | tr '.' '/')
+      
+          echo "Package: $PKG"
+          echo "Path: $PKG_PATH"
+      
+          # ===== STRINGS =====
+          sed -i "s/NOME_DINAMICO/$APP_NAME/g" app/src/main/res/values/strings.xml
+      
+          # ===== MANIFEST =====
+          sed -i "s/package=\"[^\"]*\"/package=\"$PKG\"/g" app/src/main/AndroidManifest.xml
+      
+          # ===== GRADLE =====
+          sed -i "s/namespace = \".*\"/namespace = \"$PKG\"/g" app/build.gradle.kts
+          sed -i "s/applicationId = \".*\"/applicationId = \"$PKG\"/g" app/build.gradle.kts
+      
+          # ===== JAVA =====
+          OLD_DIR=$(find app/src/main/java -name MainActivity.java | sed 's|/MainActivity.java||')
+      
+          mkdir -p app/src/main/java/$PKG_PATH
+          mv $OLD_DIR/MainActivity.java app/src/main/java/$PKG_PATH/
+      
+          sed -i "s/^package .*/package $PKG;/" app/src/main/java/$PKG_PATH/MainActivity.java
+      
+          rm -rf app/src/main/java/com || true
+
       - name: Checkout
         uses: actions/checkout@v4
 
