@@ -1,15 +1,16 @@
-package PACOTE_DINAMICO;
+package com.meuapp.jogo;
 
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.view.View;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
-import android.view.WindowManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.webkit.WebViewAssetLoader;
@@ -20,9 +21,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // =========================
-        // FULLSCREEN REAL (REMOVE TARJA CINZA)
-        // =========================
+        // ========== FULLSCREEN REAL ==========
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
             WindowInsetsController controller = getWindow().getInsetsController();
@@ -48,9 +47,6 @@ public class MainActivity extends AppCompatActivity {
             );
         }
 
-        // =========================
-        // WEBVIEW VIA CÓDIGO
-        // =========================
         WebView webView = new WebView(this);
         setContentView(webView);
 
@@ -58,31 +54,21 @@ public class MainActivity extends AppCompatActivity {
         webView.getSettings().setDomStorageEnabled(true);
         webView.getSettings().setAllowFileAccess(false);
         webView.getSettings().setAllowContentAccess(false);
-        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
-        WebViewAssetLoader assetLoader =
-                new WebViewAssetLoader.Builder()
-                        .addPathHandler(
-                                "/assets/",
-                                new WebViewAssetLoader.AssetsPathHandler(this)
-                        )
-                        .build();
+        final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                .build();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(
-                    WebView view,
-                    WebResourceRequest request
+                    WebView view, WebResourceRequest request
             ) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
+                Uri uri = request.getUrl();
+                return assetLoader.shouldInterceptRequest(uri);
             }
         });
 
-        // =========================
-        // LOAD DO CONSTRUCT 3
-        // =========================
-        webView.loadUrl(
-                "https://appassets.androidplatform.net/assets/www/index.html"
-        );
+        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
     }
 }
