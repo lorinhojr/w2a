@@ -24,42 +24,39 @@ android {
      */
     signingConfigs {
         create("release") {
-            // Usa keystore gerado no CI ou secreto do GitHub
+            // Procura o keystore na raiz do projeto app/
             val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
-            val storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword")
-            val keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias")
-            val keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword")
-
+            
             if (storeFilePath != null && storeFilePath.isNotBlank()) {
+                // Se encontrar, configura a assinatura
                 storeFile = file(storeFilePath)
-                storePassword?.let { storePassword = it }
-                keyAlias?.let { keyAlias = it }
-                keyPassword?.let { keyPassword = it }
+                storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: "android"
+                keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: "androiddebugkey"
+                keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: "android"
             }
-            // Se não tiver variáveis, não configura assinatura (usará debug)
+            // Se não encontrar, NÃO CONFIGURA - vai usar debug
         }
     }
-
+    
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
             
-            // Só usa signingConfig se estiver configurado
+            // Só usa signing config se estiver configurado
             val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
-            if (storeFilePath != null && storeFilePath.isNotBlank()) {
+            if (storeFilePath != null && storeFilePath.isNotBlank() && 
+                signingConfigs.findByName("release")?.storeFile?.exists() == true) {
                 signingConfig = signingConfigs.getByName("release")
-            } else {
-                // Se não tiver keystore, usa debug (assina com debug.keystore padrão)
-                isDebuggable = true
             }
-
+            // Se não configurar, Gradle usa debug.keystore automático
+    
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-
+    
         getByName("debug") {
             isDebuggable = true
         }
