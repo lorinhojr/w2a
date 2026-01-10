@@ -14,33 +14,29 @@ android {
         versionCode = 1
         versionName = "1.0"
         
-        // Suporte a WebView moderno
         buildFeatures {
             buildConfig = true
         }
     }
 
     /**
-     * ===============================
-     * ASSINATURA (USANDO ENV VARS)
-     * ===============================
+     * ASSINATURA FIXA - SEM FALLBACK BUGADO
      */
     signingConfigs {
         create("release") {
+            // Usa keystore gerado no CI ou secreto do GitHub
             val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
+            val storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword")
+            val keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias")
+            val keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword")
 
             if (storeFilePath != null && storeFilePath.isNotBlank()) {
                 storeFile = file(storeFilePath)
-                storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: "android"
-                keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: "androiddebugkey"
-                keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: "android"
-            } else {
-                // Fallback para debug keystore
-                storeFile = file("debug.keystore")
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
+                storePassword?.let { storePassword = it }
+                keyAlias?.let { keyAlias = it }
+                keyPassword?.let { keyPassword = it }
             }
+            // Se não tiver variáveis, não configura assinatura (usará debug)
         }
     }
 
@@ -48,8 +44,16 @@ android {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("release")
             
+            // Só usa signingConfig se estiver configurado
+            val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
+            if (storeFilePath != null && storeFilePath.isNotBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                // Se não tiver keystore, usa debug (assina com debug.keystore padrão)
+                isDebuggable = true
+            }
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -58,7 +62,6 @@ android {
 
         getByName("debug") {
             isDebuggable = true
-            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -71,21 +74,8 @@ android {
         jvmTarget = "11"
     }
     
-    // Configurações de recursos - REMOVIDA aaptOptions depreciada
-    androidResources {
-        // Desabilitar compressão para WebP (se necessário)
-        ignoreAssetsPattern += "!.webp:!.webm:!.mp4:!.mp3:!.ogg:!.wav"
-    }
-    
-    // Habilitar namespace para recursos
-    buildFeatures {
-        buildConfig = true
-        viewBinding = false
-        dataBinding = false
-        aidl = true
-        renderScript = false
-        resValues = false
-        shaders = false
+    aaptOptions {
+        cruncherEnabled = false
     }
 }
 
