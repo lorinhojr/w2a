@@ -100,7 +100,7 @@ jobs:
           sed -i "s/namespace = \"PACOTE_DINAMICO\"/namespace = \"${{ github.event.client_payload.package_name }}\"/g" app/build.gradle.kts
           
           # 7. Troca o applicationId no build.gradle.kts
-          sed -i "s/applicationId = \"PACOTE_DINAMICO\"/applicationId = \"${{ github.event.client_payload.app_id }}\"/g" app/build.gradle.kts
+          sed -i "s/applicationId = \"PACOTE_DINAMICO\"/applicationId = \"${{ github.event.client_payload.package_name }}\"/g" app/build.gradle.kts
           
           # Mostra o conteúdo atualizado para debug
           echo "=== AndroidManifest.xml após atualização ==="
