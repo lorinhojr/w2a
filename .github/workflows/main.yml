@@ -23,129 +23,122 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Personalizar Projeto (Dinâmico)
+      - name: Personalizar Projeto (Dinâmico e Completo)
         run: |
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.app_name }}"
-          
-          echo "================================"
-          echo "INICIANDO PERSONALIZAÇÃO"
-          echo "Package: $PKG"
-          echo "App Name: $APP_NAME"
-          echo "================================"
-          
           PKG_PATH=$(echo "$PKG" | tr '.' '/')
-          
-          # ===== STRINGS =====
+
+          echo "=========================================="
+          echo "INICIANDO PERSONALIZAÇÃO COMPLETA"
+          echo "=========================================="
+
+          # 1. STRINGS - Validação e Troca
           if [ -f "app/src/main/res/values/strings.xml" ]; then
             sed -i "s/NOME_DINAMICO/$APP_NAME/g" app/src/main/res/values/strings.xml
+            echo "✓ Strings atualizadas"
+          else
+            echo "ERROR: strings.xml não encontrado" && exit 1
           fi
-          
-          # ===== MANIFEST =====
+
+          # 2. MANIFEST - Correção de Namespace para AAB
           if [ -f "app/src/main/AndroidManifest.xml" ]; then
-            sed -i "s/PACOTE_DINAMICO/$PKG/g" app/src/main/AndroidManifest.xml
-            # Remove package="..." antigo para evitar conflito com namespace do Gradle 8+
+            # Remove o atributo package da tag manifest (Obrigatório para Gradle 8+)
             sed -i 's/package="[^"]*"//g' app/src/main/AndroidManifest.xml
+            # Substitui placeholders internos
+            sed -i "s/PACOTE_DINAMICO/$PKG/g" app/src/main/AndroidManifest.xml
+            echo "✓ Manifest atualizado"
           fi
-          
-          # ===== GRADLE =====
+
+          # 3. GRADLE - Ajuste de build.gradle.kts
           if [ -f "app/build.gradle.kts" ]; then
             sed -i "s/namespace = \".*\"/namespace = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/applicationId = \".*\"/applicationId = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/build.gradle.kts
+            echo "✓ Build.gradle.kts atualizado"
           fi
-          
-          # ===== JAVA REORGANIZAÇÃO =====
-          # Procura qualquer MainActivity.java no projeto e move para a pasta do novo package
+
+          # 4. JAVA - Reorganização completa de pastas
+          echo "Reorganizando estrutura Java..."
+          # Localiza a MainActivity independente de onde ela esteja
           OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
-          if [ ! -z "$OLD_PATH" ]; then
+          if [ -n "$OLD_PATH" ]; then
             mkdir -p "app/src/main/java/$PKG_PATH"
             mv "$OLD_PATH" "app/src/main/java/$PKG_PATH/MainActivity.java"
             sed -i "s/package .*/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
             sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            # Limpa pastas vazias
+            # Remove pastas antigas que ficaram vazias
             find app/src/main/java -type d -empty -delete
-          fi
-          
-          # ===== PROGUARD =====
-          if [ -f "app/proguard-rules.pro" ]; then
-            sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
+            echo "✓ Java reorganizado para $PKG"
           fi
 
-      - name: Configurar Keystore
-        run: |
-          cd app
-          if [ -f "chave1.jks" ]; then
-            echo "ORG_GRADLE_PROJECT_storeFile=chave1.jks" >> $GITHUB_ENV
-          else
-            keytool -genkeypair -v -keystore keystore.jks -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass android -keypass android \
-              -dname "CN=Android Debug, O=Android, C=US"
-            echo "ORG_GRADLE_PROJECT_storeFile=keystore.jks" >> $GITHUB_ENV
-          fi
-          cd ..
+          # 5. PROGUARD
+          [ -f "app/proguard-rules.pro" ] && sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
 
-      - name: Download e Aplicação do Ícone
+      - name: Download e Aplicação do Ícone (Resistente a Erros)
         run: |
           sudo apt-get update && sudo apt-get install -y imagemagick webp || true
-          
           ICON_URL="${{ github.event.client_payload.icon_url }}"
+          
           if [ -n "$ICON_URL" ]; then
-            curl -L -A "Mozilla/5.0" "$ICON_URL" -o /tmp/ic_launcher.webp || echo "Erro download"
+            curl -L -A "Mozilla/5.0" --connect-timeout 10 "$ICON_URL" -o /tmp/icon_raw || echo "Falha download"
           fi
 
-          if [ ! -f /tmp/ic_launcher.webp ]; then
+          if [ -s /tmp/icon_raw ]; then
+            convert /tmp/icon_raw -resize 512x512 /tmp/ic_launcher.webp || convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
+          else
             convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
           fi
-          
+
           for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            BASE="app/src/main/res/$dir"
-            mkdir -p "$BASE"
-            cp /tmp/ic_launcher.webp "$BASE/ic_launcher.webp"
-            cp /tmp/ic_launcher.webp "$BASE/ic_launcher_round.webp"
+            mkdir -p "app/src/main/res/$dir"
+            cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher.webp"
+            cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher_round.webp"
+            # Remove PNGs antigos para não dar conflito
+            rm -f "app/src/main/res/$dir/ic_launcher.png" "app/src/main/res/$dir/ic_launcher_round.png"
           done
 
-      - name: Extrair jogo (HTML/Construct)
+      - name: Extrair Assets do Jogo (Construct/HTML5)
         run: |
           mkdir -p app/src/main/assets/www
           rm -rf app/src/main/assets/www/*
           
-          curl -L "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
-          
-          if [ -s /tmp/jogo.zip ]; then
-            unzip -q -o /tmp/jogo.zip -d app/src/main/assets/www/
-            # Ajustar se o ZIP veio com uma pasta raiz
-            if [ ! -f "app/src/main/assets/www/index.html" ]; then
-               SUBFOLDER=$(find app/src/main/assets/www -name "index.html" -type f | xargs dirname | head -1)
-               if [ -n "$SUBFOLDER" ] && [ "$SUBFOLDER" != "app/src/main/assets/www" ]; then
-                  mv "$SUBFOLDER"/* app/src/main/assets/www/
-               fi
+          if [ -n "${{ github.event.client_payload.zip_url }}" ]; then
+            curl -L "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
+            if [ -s /tmp/jogo.zip ]; then
+              unzip -o /tmp/jogo.zip -d app/src/main/assets/www/
+              # Move arquivos se estiverem dentro de uma subpasta no ZIP
+              if [ ! -f "app/src/main/assets/www/index.html" ]; then
+                SEARCH_INDEX=$(find app/src/main/assets/www -name "index.html" | head -1)
+                if [ -n "$SEARCH_INDEX" ]; then
+                  mv $(dirname "$SEARCH_INDEX")/* app/src/main/assets/www/
+                fi
+              fi
             fi
           fi
-          
-          # Fallback se index.html não existir após extração
+
+          # Correção da linha 159 (Aspas protegidas)
           if [ ! -f "app/src/main/assets/www/index.html" ]; then
-            echo "<html><body style='background:#000;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh'><h1>Carregando...</h1></body></html>" > app/src/main/assets/www/index.html
+            echo "<html><body style='background:#000;color:#fff'><h1>Carregando...</h1></body></html>" > app/src/main/assets/www/index.html
           fi
 
-      - name: Dar permissão ao Gradle Wrapper
-        run: chmod +x gradlew
-
-      - name: Compilar APK e AAB
+      - name: Compilar APK e AAB (Release)
         run: |
+          chmod +x gradlew
           ./gradlew clean
           ./gradlew assembleRelease --no-daemon
           ./gradlew bundleRelease --no-daemon
 
-      - name: Upload APK
+      - name: Upload dos Artefatos
         uses: actions/upload-artifact@v4
         with:
-          name: APK_${{ github.event.client_payload.app_id }}
-          path: app/build/outputs/apk/release/*.apk
+          name: Build_${{ github.event.client_payload.app_id }}
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+          retention-days: 7
 
-      - name: Upload AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: AAB_${{ github.event.client_payload.app_id }}
-          path: app/build/outputs/bundle/release/*.aab
+      - name: Notificação Final
+        if: always()
+        run: |
+          echo "Build Finalizado. Status: ${{ job.status }}"
