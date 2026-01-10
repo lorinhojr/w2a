@@ -13,18 +13,17 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        
+        // Suporte a WebView moderno
+        buildFeatures {
+            buildConfig = true
+        }
     }
 
     /**
      * ===============================
      * ASSINATURA (USANDO ENV VARS)
      * ===============================
-     * Essas variáveis vêm direto do GitHub Actions:
-     *
-     * ORG_GRADLE_PROJECT_storeFile
-     * ORG_GRADLE_PROJECT_storePassword
-     * ORG_GRADLE_PROJECT_keyAlias
-     * ORG_GRADLE_PROJECT_keyPassword
      */
     signingConfigs {
         create("release") {
@@ -32,9 +31,15 @@ android {
 
             if (storeFilePath != null && storeFilePath.isNotBlank()) {
                 storeFile = file(storeFilePath)
-                storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword")
-                keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias")
-                keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword")
+                storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: "android"
+                keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: "androiddebugkey"
+                keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: "android"
+            } else {
+                // Fallback para debug keystore
+                storeFile = file("debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
         }
     }
@@ -42,8 +47,9 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
-
+            
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -51,7 +57,8 @@ android {
         }
 
         getByName("debug") {
-            // debug continua usando a debug.keystore automática
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -62,6 +69,11 @@ android {
 
     kotlinOptions {
         jvmTarget = "11"
+    }
+    
+    // Ativar compressão de recursos WebP
+    aaptOptions {
+        cruncherEnabled = false
     }
 }
 
