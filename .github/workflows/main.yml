@@ -5,48 +5,49 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Variáveis de ambiente para o Gradle
+      ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD || 'android' }}
+      ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD || 'android' }}
+      ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS || 'androiddebugkey' }}
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v4
+      
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+        
       - name: Configurar Keystore
         id: setup-keystore
         run: |
           echo "=== CONFIGURANDO KEYSTORE ==="
           
-          # 1. Tenta usar o keystore do segredo
-          if [ -n "${{ secrets.SIGNING_KEY_BASE64 }}" ]; then
-            echo "Decodificando keystore do segredo..."
-            echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 --decode > app/keystore.jks 2>/dev/null
+          # Assume que a chave já está no repositório em app/chave1.jks
+          KEYSTORE_PATH="app/chave1.jks"
+          
+          if [ -f "$KEYSTORE_PATH" ] && [ $(stat -c%s "$KEYSTORE_PATH") -gt 100 ]; then
+            echo "✅ Keystore encontrado no repositório ($KEYSTORE_PATH - $(stat -c%s "$KEYSTORE_PATH") bytes)"
             
-            # Verifica se o arquivo não está vazio
-            if [ -s app/keystore.jks ]; then
-              echo "✅ Keystore do segredo carregado ($(stat -c%s app/keystore.jks) bytes)"
-              
-              # Testa se o keystore é válido
-              if keytool -list -keystore app/keystore.jks -storepass "${{ secrets.KEY_PASSWORD }}" 2>&1 | grep -q "Alias name"; then
-                echo "✅ Keystore válido e acessível"
-                echo "key_source=secret" >> $GITHUB_ENV
-              else
-                echo "❌ Keystore inválido ou senha incorreta"
-                echo "key_source=invalid" >> $GITHUB_ENV
-              fi
+            # Testa se o keystore é válido com a senha do secret
+            if keytool -list -keystore "$KEYSTORE_PATH" -storepass "${{ secrets.KEY_PASSWORD }}" 2>&1 | grep -q "Alias name"; then
+              echo "✅ Keystore válido e acessível"
+              echo "key_source=repo" >> $GITHUB_ENV
+              echo "ORG_GRADLE_PROJECT_storeFile=$KEYSTORE_PATH" >> $GITHUB_ENV
             else
-              echo "❌ Keystore decodificado está vazio"
-              echo "key_source=empty" >> $GITHUB_ENV
+              echo "❌ Keystore inválido ou senha incorreta - usando debug"
+              echo "key_source=debug" >> $GITHUB_ENV
             fi
           else
-            echo "❌ Segredo SIGNING_KEY_BASE64 não definido"
-            echo "key_source=missing" >> $GITHUB_ENV
+            echo "❌ Keystore não encontrado ou inválido em $KEYSTORE_PATH - usando debug"
+            echo "key_source=debug" >> $GITHUB_ENV
           fi
           
-          # 2. Se o keystore do segredo falhou, cria um keystore debug
-          if [ "${{ env.key_source }}" != "secret" ]; then
-            echo "Criando keystore debug para continuar o build..."
+          # Se falhou, cria keystore debug
+          if [ "${{ env.key_source }}" = "debug" ]; then
+            echo "Criando keystore debug..."
             keytool -genkeypair -v \
               -keystore app/keystore.jks \
               -alias androiddebugkey \
@@ -57,21 +58,25 @@ jobs:
               -keypass android \
               -dname "CN=Android Debug, O=Android, C=US"
             
-            echo "key_source=debug" >> $GITHUB_ENV
-            echo "DEBUG_KEY_PASSWORD=android" >> $GITHUB_ENV
-            echo "DEBUG_KEY_ALIAS=androiddebugkey" >> $GITHUB_ENV
+            echo "DEBUG_MODE=true" >> $GITHUB_ENV
+            echo "ORG_GRADLE_PROJECT_storeFile=keystore.jks" >> $GITHUB_ENV
+            echo "Keystore debug criado com sucesso"
           fi
           
-          # Debug: Mostra informações finais
-          echo "=== STATUS DO KEYSTORE ==="
-          echo "Fonte da chave: ${{ env.key_source }}"
-          ls -la app/keystore.jks 2>/dev/null || echo "Keystore não encontrado"
+          echo "=== STATUS FINAL ==="
+          echo "Fonte: ${{ env.key_source }}"
+          echo "Store File: ${{ env.ORG_GRADLE_PROJECT_storeFile }}"
+          ls -la app/*.jks 2>/dev/null || echo "Keystore não encontrado"
+        
       - name: Personalizar Projeto (SED)
         run: |
           echo "=== INICIANDO PERSONALIZAÇÃO ==="
           echo "App Name: ${{ github.event.client_payload.app_name }}"
           echo "Package: ${{ github.event.client_payload.package_name }}"
           echo "App ID: ${{ github.event.client_payload.app_id }}"
+          
+          # Backup dos arquivos originais
+          cp app/build.gradle.kts app/build.gradle.kts.backup
           
           # 1. Troca o Nome do App
           sed -i "s/NOME_DINAMICO/${{ github.event.client_payload.app_name }}/g" app/src/main/res/values/strings.xml
@@ -87,14 +92,15 @@ jobs:
             sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/src/main/java/com/meuapp/jogo/MainActivity.java
           fi
           
-          # 5. Procura e substitui em todos os arquivos Java
-          find app/src/main/java -name "*.java" -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \;
+          # 5. Procura e substitui em todos os arquivos Java/Kotlin
+          find app/src/main/java -name "*.java" -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; 2>/dev/null || true
+          find app/src/main/kotlin -name "*.kt" -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; 2>/dev/null || true
           
           # 6. Troca o Package no namespace do build.gradle.kts (crucial para AAB)
           sed -i "s/namespace = \"PACOTE_DINAMICO\"/namespace = \"${{ github.event.client_payload.package_name }}\"/g" app/build.gradle.kts
           
           # 7. Troca o applicationId no build.gradle.kts
-          sed -i "s/applicationId = \"PACOTE_DINAMICO\"/applicationId = \"${{ github.event.client_payload.package_name }}\"/g" app/build.gradle.kts
+          sed -i "s/applicationId = \"PACOTE_DINAMICO\"/applicationId = \"${{ github.event.client_payload.app_id }}\"/g" app/build.gradle.kts
           
           # Mostra o conteúdo atualizado para debug
           echo "=== AndroidManifest.xml após atualização ==="
@@ -105,6 +111,7 @@ jobs:
           
           echo "=== Verificação final do build.gradle ==="
           grep -E "(namespace|applicationId)" app/build.gradle.kts
+        
       - name: Download e Troca do Ícone
         run: |
           echo "=== BAIXANDO ÍCONE ==="
@@ -117,6 +124,10 @@ jobs:
             echo "Ícone baixado com sucesso ($(stat -c%s icone_usuario.png) bytes). Aplicando..."
             find app/src/main/res/mipmap-* -name "ic_launcher.png" -exec cp icone_usuario.png {} \;
             find app/src/main/res/mipmap-* -name "ic_launcher_round.png" -exec cp icone_usuario.png {} \;
+            # Substitui todos os ícones de launcher adicionais se existirem
+            find app/src/main/res -name "ic_launcher*.png" -type f | while read icon; do
+              cp icone_usuario.png "$icon"
+            done
             echo "Ícone personalizado aplicado com sucesso!"
           else
             echo "Usando ícone padrão do template."
@@ -124,6 +135,7 @@ jobs:
           
           echo "=== Ícones disponíveis ==="
           find app/src/main/res -name "ic_launcher*.png" -exec ls -la {} \;
+        
       - name: Limpar e Extrair Projeto do Jogo
         run: |
           echo "=== CONFIGURANDO JOGO ==="
@@ -168,30 +180,26 @@ jobs:
           ls -la app/src/main/assets/www/
           echo "=== PRIMEIROS ARQUIVOS ==="
           find app/src/main/assets/www -type f | head -10
+        
       - name: Dar permissão ao Gradle
         run: chmod +x gradlew
+      
       - name: Compilar APK e AAB (Release)
         run: |
           echo "=== INICIANDO COMPILAÇÃO ==="
+          
+          # Mostra variáveis de ambiente para debug
+          echo "ORG_GRADLE_PROJECT_storePassword: $ORG_GRADLE_PROJECT_storePassword"
+          echo "ORG_GRADLE_PROJECT_keyPassword: $ORG_GRADLE_PROJECT_keyPassword"
+          echo "ORG_GRADLE_PROJECT_keyAlias: $ORG_GRADLE_PROJECT_keyAlias"
+          echo "ORG_GRADLE_PROJECT_storeFile: $ORG_GRADLE_PROJECT_storeFile"
+          
+          # Limpa build anterior
           ./gradlew clean
           
-          if [ "${{ env.key_source }}" = "secret" ]; then
-            echo "🔐 Compilando com keystore de produção..."
-            ./gradlew assembleRelease bundleRelease \
-              -PstorePassword="${{ secrets.KEY_PASSWORD }}" \
-              -PkeyPassword="${{ secrets.KEY_PASSWORD }}" \
-              -PkeyAlias="${{ secrets.ALIAS }}" \
-              -PstoreFile=keystore.jks \
-              --stacktrace --info
-          else
-            echo "🔓 Compilando com keystore debug..."
-            ./gradlew assembleRelease bundleRelease \
-              -PstorePassword="android" \
-              -PkeyPassword="android" \
-              -PkeyAlias="androiddebugkey" \
-              -PstoreFile=keystore.jks \
-              --stacktrace --info
-          fi
+          # Compila
+          ./gradlew assembleRelease bundleRelease --stacktrace --info
+        
       - name: Verificar se os arquivos foram gerados
         run: |
           echo "=== VERIFICANDO ARQUIVOS GERADOS ==="
@@ -205,16 +213,18 @@ jobs:
           echo "3. Conteúdo das pastas de release:"
           ls -la app/build/outputs/apk/release/ 2>/dev/null || echo "Pasta APK release não existe"
           ls -la app/build/outputs/bundle/release/ 2>/dev/null || echo "Pasta AAB release não existe"
+        
       - name: Assinar Arquivos APK
         uses: r0adkll/sign-android-release@v1
         with:
           releaseDirectory: app/build/outputs/apk/release/
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ env.DEBUG_KEY_ALIAS || secrets.ALIAS }}
-          keyStorePassword: ${{ env.DEBUG_KEY_PASSWORD || secrets.KEY_PASSWORD }}
-          keyPassword: ${{ env.DEBUG_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}  # Manter se necessário, mas como a chave está no repo, pode não ser usado
+          alias: ${{ env.ORG_GRADLE_PROJECT_keyAlias }}
+          keyStorePassword: ${{ env.ORG_GRADLE_PROJECT_storePassword }}
+          keyPassword: ${{ env.ORG_GRADLE_PROJECT_keyPassword }}
         id: sign_app
         continue-on-error: true
+        
       - name: Upload APK Assinado
         if: steps.sign_app.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -223,6 +233,7 @@ jobs:
           path: ${{ steps.sign_app.outputs.signedReleaseFile }}
           retention-days: 7
           if-no-files-found: warn
+        
       - name: Upload APK Não Assinado (Fallback)
         if: steps.sign_app.outcome != 'success'
         uses: actions/upload-artifact@v4
@@ -231,6 +242,7 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           retention-days: 7
           if-no-files-found: warn
+        
       - name: Upload AAB para Play Store
         uses: actions/upload-artifact@v4
         with:
@@ -238,6 +250,7 @@ jobs:
           path: app/build/outputs/bundle/release/*.aab
           retention-days: 7
           if-no-files-found: warn
+        
       # Passo para notificar o sistema principal sobre a conclusão do build
       - name: Notificar Sistema Principal
         if: success() && github.event.client_payload.callback_url != ''
@@ -274,7 +287,7 @@ jobs:
           echo "Payload: $JSON_PAYLOAD"
           echo "URL: ${{ github.event.client_payload.callback_url }}"
           
-          # Enviar notificação (sem Authorization header)
+          # Enviar notificação
           curl -X POST "${{ github.event.client_payload.callback_url }}" \
             -H "Content-Type: application/json" \
             -d "$JSON_PAYLOAD" \
@@ -285,6 +298,7 @@ jobs:
             --silent \
             --output /dev/null \
             --write-out "Status: %{http_code}\n" || echo "AVISO: Falha ao enviar notificação de sucesso"
+        
       # Passo para lidar com falhas
       - name: Notificar Falha
         if: failure() && github.event.client_payload.callback_url != ''
@@ -312,7 +326,7 @@ jobs:
           echo "Payload de erro: $JSON_PAYLOAD"
           echo "URL: ${{ github.event.client_payload.callback_url }}"
           
-          # Enviar notificação de erro (sem Authorization header)
+          # Enviar notificação de erro
           curl -X POST "${{ github.event.client_payload.callback_url }}" \
             -H "Content-Type: application/json" \
             -d "$JSON_PAYLOAD" \
@@ -323,6 +337,7 @@ jobs:
             --silent \
             --output /dev/null \
             --write-out "Status: %{http_code}\n" || echo "AVISO: Falha ao enviar notificação de erro"
+        
       - name: Limpeza Final
         if: always()
         run: |
