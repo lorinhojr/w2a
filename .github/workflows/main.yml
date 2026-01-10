@@ -1,4 +1,4 @@
-name: W2A builder
+name: W2A Builder
 
 on:
   repository_dispatch:
@@ -14,7 +14,7 @@ jobs:
       ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS || 'androiddebugkey' }}
 
     steps:
-      - name: Checkout do repositório
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -23,13 +23,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # =========================
-      # KEYSTORE
-      # =========================
       - name: Configurar Keystore
         run: |
-          echo "=== CONFIGURANDO KEYSTORE ==="
-
           if [ -f app/chave1.jks ]; then
             echo "ORG_GRADLE_PROJECT_storeFile=chave1.jks" >> $GITHUB_ENV
           else
@@ -42,56 +37,36 @@ jobs:
               -storepass android \
               -keypass android \
               -dname "CN=Android Debug, O=Android, C=US"
-
             echo "ORG_GRADLE_PROJECT_storeFile=keystore.jks" >> $GITHUB_ENV
           fi
 
-      # =========================
-      # PERSONALIZAÇÃO
-      # =========================
       - name: Personalizar Projeto
         run: |
           sed -i "s/NOME_DINAMICO/${{ github.event.client_payload.app_name }}/g" app/src/main/res/values/strings.xml
           sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/src/main/AndroidManifest.xml
           sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" app/build.gradle.kts
-
           find app/src/main/java -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; || true
 
-      # =========================
-      # ÍCONE (WEBP CORRETO)
-      # =========================
-      - name: Atualizar Ícone do App
+      - name: Baixar ícone e converter
         run: |
-          echo "=== BAIXANDO ÍCONE ==="
-          curl -L \
-            -H "User-Agent: Mozilla/5.0" \
-            -H "Accept: image/*" \
-            --fail \
-            "${{ github.event.client_payload.icon_url }}" \
-            -o icon.png
-
+          curl -L -H "User-Agent: Mozilla/5.0" -H "Accept: image/*" --fail "${{ github.event.client_payload.icon_url }}" -o icon.png
           sudo apt-get update
           sudo apt-get install -y webp
-
           cwebp -q 100 icon.png -o icon.webp
 
-          echo "=== SUBSTITUINDO ÍCONES WEBP ==="
+      - name: Substituir ícones
+        run: |
           for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
             cp icon.webp app/src/main/res/$dir/ic_launcher.webp
             cp icon.webp app/src/main/res/$dir/ic_launcher_round.webp
           done
 
-      # =========================
-      # JOGO (CONSTRUCT 3)
-      # =========================
-      - name: Extrair Jogo
+      - name: Extrair jogo
         run: |
           mkdir -p app/src/main/assets/www
           rm -rf app/src/main/assets/www/*
-
           curl -L "${{ github.event.client_payload.zip_url }}" -o jogo.zip
           unzip -o jogo.zip -d app/src/main/assets/www/
-
           if [ ! -f app/src/main/assets/www/index.html ]; then
             echo "<h1>Erro: index.html não encontrado</h1>" > app/src/main/assets/www/index.html
           fi
@@ -99,24 +74,18 @@ jobs:
       - name: Permissão Gradle
         run: chmod +x gradlew
 
-      # =========================
-      # BUILD
-      # =========================
-      - name: Build APK e AAB
+      - name: Compilar
         run: |
           ./gradlew clean
           ./gradlew assembleRelease bundleRelease
 
-      # =========================
-      # UPLOAD
-      # =========================
-      - name: Upload APK Release
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: APK_${{ github.event.client_payload.app_id }}
           path: app/build/outputs/apk/release/*.apk
 
-      - name: Upload AAB Release
+      - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: AAB_${{ github.event.client_payload.app_id }}
