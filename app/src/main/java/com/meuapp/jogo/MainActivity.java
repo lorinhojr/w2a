@@ -14,18 +14,22 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
 
-        WebView webView = findViewById(R.id.webview);
+        // WebView criado VIA CÓDIGO (SEM XML)
+        WebView webView = new WebView(this);
+        setContentView(webView);
 
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setAllowFileAccess(false);
         webView.getSettings().setAllowContentAccess(false);
+        webView.getSettings().setDomStorageEnabled(true);
 
         WebViewAssetLoader assetLoader =
                 new WebViewAssetLoader.Builder()
-                        .addPathHandler("/assets/",
-                                new WebViewAssetLoader.AssetsPathHandler(this))
+                        .addPathHandler(
+                                "/assets/",
+                                new WebViewAssetLoader.AssetsPathHandler(this)
+                        )
                         .build();
 
         webView.setWebViewClient(new WebViewClient() {
@@ -38,6 +42,9 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
+        // CAMINHO CORRETO (igual Construct)
+        webView.loadUrl(
+                "https://appassets.androidplatform.net/assets/www/index.html"
+        );
     }
 }
