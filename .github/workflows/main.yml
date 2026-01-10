@@ -94,7 +94,6 @@ jobs:
             echo "✓ Arquivos Java reorganizados"
           else
             echo "Procurando MainActivity em outras localizações..."
-            find app/src/main/java -name "MainActivity.java" | head -1
             OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
             if [ ! -z "$OLD_PATH" ]; then
               OLD_DIR=$(dirname "$OLD_PATH")
@@ -102,6 +101,7 @@ jobs:
               mkdir -p "app/src/main/java/$PKG_PATH"
               cp "$OLD_PATH" "app/src/main/java/$PKG_PATH/MainActivity.java"
               sed -i "s/package .*;/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
+              sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
               find "$OLD_DIR" -type f -exec rm {} \;
               find app/src/main/java -type d -empty -delete
               echo "✓ Arquivos Java reorganizados (alternativo)"
@@ -143,14 +143,22 @@ jobs:
         run: |
           echo "=== BAIXANDO ÍCONE ==="
           
+          # Instalar imagemagick se necessário para criar ícone padrão
+          sudo apt-get update && sudo apt-get install -y imagemagick webp || true
+          
           curl -L \
             -H "User-Agent: Mozilla/5.0" \
             --fail-with-body \
             "${{ github.event.client_payload.icon_url }}" \
             -o /tmp/ic_launcher.webp || {
               echo "Falha ao baixar ícone, criando padrão..."
-              # Criar ícone padrão simples
-              convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp 2>/dev/null || touch /tmp/ic_launcher.webp
+              # Criar ícone padrão simples com imagemagick ou fallback
+              if command -v convert &> /dev/null; then
+                convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
+              else
+                echo "Criando arquivo WebP vazio como fallback..."
+                echo -n "RIFF\x00\x00\x00\x00WEBP" > /tmp/ic_launcher.webp
+              fi
             }
           
           echo "=== SUBSTITUINDO ÍCONES ==="
@@ -161,19 +169,22 @@ jobs:
             
             if [ -d "$BASE" ]; then
               # Remover ícones antigos
-              rm -f "$BASE/ic_launcher.webp" "$BASE/ic_launcher.png" "$BASE/ic_launcher_round.webp" "$BASE/ic_launcher_round.png"
+              rm -f "$BASE/ic_launcher.webp" "$BASE/ic_launcher.png" 2>/dev/null || true
+              rm -f "$BASE/ic_launcher_round.webp" "$BASE/ic_launcher_round.png" 2>/dev/null || true
               
               # Copiar novo ícone
               cp /tmp/ic_launcher.webp "$BASE/ic_launcher.webp" 2>/dev/null || true
               
-              # Criar versão round se necessário
+              # Criar versão round se o arquivo já existia
               if [ -f "$BASE/ic_launcher_round.webp" ] || [ -f "$BASE/ic_launcher_round.png" ]; then
                 cp /tmp/ic_launcher.webp "$BASE/ic_launcher_round.webp" 2>/dev/null || true
               fi
               
               echo "✓ Atualizado $dir"
             else
-              echo "⚠ Diretório $dir não encontrado"
+              echo "⚠ Diretório $dir não encontrado, criando..."
+              mkdir -p "$BASE"
+              cp /tmp/ic_launcher.webp "$BASE/ic_launcher.webp" 2>/dev/null || true
             fi
           done
 
@@ -188,41 +199,56 @@ jobs:
           rm -rf app/src/main/assets/www/*
           
           # Baixar e extrair
-          curl -L "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
+          curl -L --retry 3 "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
           
-          if [ $? -eq 0 ]; then
+          if [ $? -eq 0 ] && [ -s /tmp/jogo.zip ]; then
             echo "Extraindo arquivos..."
             unzip -q -o /tmp/jogo.zip -d app/src/main/assets/www/
             
             # Verificar se existe index.html
             if [ ! -f "app/src/main/assets/www/index.html" ]; then
-              echo "index.html não encontrado, procurando..."
+              echo "index.html não encontrado na raiz, procurando..."
               # Procurar em subdiretórios
-              find app/src/main/assets/www -name "index.html" -type f | head -1
-              
-              # Se ainda não encontrar, criar um básico
-              if [ ! -f "app/src/main/assets/www/index.html" ]; then
+              FOUND_INDEX=$(find app/src/main/assets/www -name "index.html" -type f | head -1)
+              if [ ! -z "$FOUND_INDEX" ]; then
+                echo "Movendo index.html para raiz..."
+                mv "$FOUND_INDEX" "app/src/main/assets/www/"
+              else
+                # Se ainda não encontrar, criar um básico
+                echo "Criando index.html básico..."
                 echo "<!DOCTYPE html>
                 <html>
                 <head>
-                  <title>Jogo HTML5</title>
+                  <title>$APP_NAME</title>
                   <meta charset='UTF-8'>
+                  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
                   <style>
-                    body { margin:0; padding:0; background:#333; }
+                    body { margin:0; padding:0; background:#333; overflow:hidden; }
                     canvas { display:block; margin:auto; background:#000; }
+                    #loading { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); color:white; font-family:Arial; text-align:center; }
                   </style>
                 </head>
                 <body>
+                  <div id='loading'>Carregando $APP_NAME...</div>
                   <canvas id='gameCanvas'></canvas>
                   <script>
                     const canvas = document.getElementById('gameCanvas');
+                    const loading = document.getElementById('loading');
                     canvas.width = window.innerWidth;
                     canvas.height = window.innerHeight;
                     const ctx = canvas.getContext('2d');
+                    
+                    // Desenhar mensagem
                     ctx.fillStyle = '#4CAF50';
                     ctx.font = '24px Arial';
                     ctx.textAlign = 'center';
-                    ctx.fillText('Jogo carregado com sucesso!', canvas.width/2, canvas.height/2);
+                    ctx.fillText('$APP_NAME', canvas.width/2, canvas.height/2 - 20);
+                    ctx.font = '16px Arial';
+                    ctx.fillText('Jogo carregado com sucesso!', canvas.width/2, canvas.height/2 + 20);
+                    
+                    setTimeout(() => {
+                      loading.style.display = 'none';
+                    }, 2000);
                   </script>
                 </body>
                 </html>" > app/src/main/assets/www/index.html
@@ -233,7 +259,7 @@ jobs:
             fi
           else
             echo "Erro ao baixar ZIP, criando jogo de exemplo"
-            echo "<h1>Jogo HTML5</h1><p>Seu jogo será carregado aqui.</p>" > app/src/main/assets/www/index.html
+            echo "<h1>$APP_NAME</h1><p>Seu jogo será carregado aqui.</p>" > app/src/main/assets/www/index.html
           fi
           
           echo "Conteúdo extraído:"
@@ -249,18 +275,29 @@ jobs:
         run: |
           echo "=== INICIANDO COMPILAÇÃO ==="
           
+          # Verificar se gradlew tem permissões
+          if [ ! -x "gradlew" ]; then
+            chmod +x gradlew
+          fi
+          
           # Clean e build
           ./gradlew clean --stacktrace
           
           # Construir APK
           echo "Construindo APK..."
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease --stacktrace --no-daemon
           
           # Construir AAB
           echo "Construindo AAB..."
-          ./gradlew bundleRelease --stacktrace
+          ./gradlew bundleRelease --stacktrace --no-daemon
           
           echo "=== COMPILAÇÃO CONCLUÍDA ==="
+          
+          # Listar arquivos gerados
+          echo "APKs gerados:"
+          find app/build/outputs/apk -name "*.apk" -type f | xargs ls -la
+          echo "AABs gerados:"
+          find app/build/outputs/bundle -name "*.aab" -type f | xargs ls -la
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -282,3 +319,4 @@ jobs:
           echo "✅ Build concluído com sucesso!"
           echo "App: ${{ github.event.client_payload.app_name }}"
           echo "Package: ${{ github.event.client_payload.package_name }}"
+          echo "ID: ${{ github.event.client_payload.app_id }}"
