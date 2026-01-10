@@ -18,7 +18,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("keystore.jks")
+            storeFile = file(System.getenv("ORG_GRADLE_PROJECT_storeFile") ?: "")
             storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: ""
             keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: ""
             keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: ""
