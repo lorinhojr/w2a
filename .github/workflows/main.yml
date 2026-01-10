@@ -23,112 +23,86 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Personalizar Projeto (Dinâmico e Completo)
+      - name: Personalizar Projeto (Pacote e Nome)
         run: |
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.app_name }}"
           PKG_PATH=$(echo "$PKG" | tr '.' '/')
 
-          echo "=========================================="
-          echo "INICIANDO PERSONALIZAÇÃO COMPLETA"
-          echo "=========================================="
-
-          # 1. STRINGS
+          # 1. Strings
           if [ -f "app/src/main/res/values/strings.xml" ]; then
             sed -i "s/NOME_DINAMICO/$APP_NAME/g" app/src/main/res/values/strings.xml
-            echo "✓ Strings atualizadas"
-          else
-            echo "ERROR: strings.xml não encontrado" && exit 1
           fi
 
-          # 2. MANIFEST - Correção de Namespace para AAB
+          # 2. Manifest e Gradle (Ajuste AAB)
           if [ -f "app/src/main/AndroidManifest.xml" ]; then
             sed -i 's/package="[^"]*"//g' app/src/main/AndroidManifest.xml
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/src/main/AndroidManifest.xml
-            echo "✓ Manifest atualizado"
           fi
 
-          # 3. GRADLE
           if [ -f "app/build.gradle.kts" ]; then
             sed -i "s/namespace = \".*\"/namespace = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/applicationId = \".*\"/applicationId = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/build.gradle.kts
-            echo "✓ Build.gradle.kts atualizado"
           fi
 
-          # 4. JAVA - Reorganização
+          # 3. Reorganização Java Completa
           OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
           if [ -n "$OLD_PATH" ]; then
             mkdir -p "app/src/main/java/$PKG_PATH"
             mv "$OLD_PATH" "app/src/main/java/$PKG_PATH/MainActivity.java"
             sed -i "s/package .*/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
             find app/src/main/java -type d -empty -delete
-            echo "✓ Java reorganizado"
           fi
-
-          # 5. PROGUARD
-          [ -f "app/proguard-rules.pro" ] && sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
 
       - name: Configurar Keystore
         run: |
           if [ -f "app/chave1.jks" ]; then
-            echo "✅ Usando chave1.jks existente"
+            echo "Chave presente"
           elif [ -n "${{ secrets.SIGNING_KEY }}" ]; then
             echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > app/chave1.jks
-            echo "✅ SIGNING_KEY decodificada"
           else
             keytool -genkeypair -v -keystore app/debug.keystore -alias androiddebugkey \
               -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android \
               -dname "CN=Android Debug, O=Android, C=US"
-            echo "✅ debug.keystore gerado"
           fi
 
       - name: Download e Aplicação do Ícone
         run: |
           sudo apt-get update && sudo apt-get install -y imagemagick webp || true
           ICON_URL="${{ github.event.client_payload.icon_url }}"
-          if [ -n "$ICON_URL" ]; then
-            curl -L -A "Mozilla/5.0" --connect-timeout 10 "$ICON_URL" -o /tmp/icon_raw || echo "Falha download"
-          fi
+          [ -n "$ICON_URL" ] && curl -L -A "Mozilla/5.0" "$ICON_URL" -o /tmp/icon_raw || touch /tmp/icon_raw
+          
           if [ -s /tmp/icon_raw ]; then
-            convert /tmp/icon_raw -resize 512x512 /tmp/ic_launcher.webp || convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
+            convert /tmp/icon_raw -resize 512x512 /tmp/ic_launcher.webp
           else
             convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
           fi
+
           for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
             mkdir -p "app/src/main/res/$dir"
             cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher.webp"
             cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher_round.webp"
-            rm -f "app/src/main/res/$dir/ic_launcher.png" "app/src/main/res/$dir/ic_launcher_round.png"
+            rm -f "app/src/main/res/$dir"/*.png
           done
 
       - name: Extrair Assets do Jogo
         run: |
           mkdir -p app/src/main/assets/www
-          rm -rf app/src/main/assets/www/*
           curl -L "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
           if [ -s /tmp/jogo.zip ]; then
             unzip -o /tmp/jogo.zip -d app/src/main/assets/www/
-            if [ ! -f "app/src/main/assets/www/index.html" ]; then
-              SEARCH_INDEX=$(find app/src/main/assets/www -name "index.html" | head -1)
-              [ -n "$SEARCH_INDEX" ] && mv $(dirname "$SEARCH_INDEX")/* app/src/main/assets/www/
-            fi
+            SEARCH_INDEX=$(find app/src/main/assets/www -name "index.html" | head -1)
+            [ -n "$SEARCH_INDEX" ] && mv $(dirname "$SEARCH_INDEX")/* app/src/main/assets/www/ || true
           fi
-          if [ ! -f "app/src/main/assets/www/index.html" ]; then
-            echo "<html><body style='background:#000;color:#fff'><h1>Carregando...</h1></body></html>" > app/src/main/assets/www/index.html
-          fi
-
-      - name: Preparar Gradle
-        run: chmod +x gradlew
+          [ ! -f "app/src/main/assets/www/index.html" ] && echo "<html><body>Carregando...</body></html>" > app/src/main/assets/www/index.html
 
       - name: Compilar APK e AAB
         run: |
-          ./gradlew clean
+          chmod +x gradlew
           ./gradlew assembleRelease bundleRelease --no-daemon
 
       - name: Upload dos Artefatos
-        id: upload-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Build_${{ github.event.client_payload.app_id }}
@@ -137,26 +111,24 @@ jobs:
             app/build/outputs/bundle/release/*.aab
           retention-days: 7
 
-      - name: Gerar Links e Callback
+      - name: Callback de Finalização
         if: always()
         run: |
-          # Coleta de dados
           APP_ID="${{ github.event.client_payload.app_id }}"
           CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
           STATUS="${{ job.status }}"
+          # Link direto para a página do GitHub onde o usuário baixa o arquivo
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          DOWNLOAD_URL="https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/Build_$APP_ID.zip"
-          
-          echo "Status do build: $STATUS"
 
           if [ -n "$CALLBACK_URL" ]; then
-            echo "Enviando Callback..."
-            # Criando o JSON de forma segura sem quebrar o YAML
-            JSON_DATA=$(printf '{"app_id":"%s","status":"%s","run_url":"%s","download_url":"%s"}' "$APP_ID" "$STATUS" "$RUN_URL" "$DOWNLOAD_URL")
+            echo "Enviando status para o PHP..."
+            # Enviamos apenas o ID do app, o status e o link da página do GitHub
+            JSON_DATA=$(printf '{"app_id":"%s","status":"%s","run_url":"%s"}' "$APP_ID" "$STATUS" "$RUN_URL")
             
+            # Adicionado o parâmetro -sS e ignore de erro de resposta vazia (empty reply)
             curl -X POST "$CALLBACK_URL" \
               -H "Content-Type: application/json" \
               -d "$JSON_DATA" \
-              --max-time 30 \
-              --retry 3
+              --max-time 15 \
+              --silent --show-error || echo "Callback enviado (servidor não respondeu, mas o build seguiu)."
           fi
