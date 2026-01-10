@@ -75,6 +75,50 @@ jobs:
           # 5. PROGUARD
           [ -f "app/proguard-rules.pro" ] && sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
 
+      - name: Configurar Keystore
+        run: |
+          echo "=== CONFIGURANDO KEYSTORE ==="
+          
+          # Usa o SIGNING_KEY do GitHub Secrets
+          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
+            echo "🔐 Usando SIGNING_KEY do GitHub Secrets"
+            echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > app/keystore.jks
+            echo "✅ Keystore decodificado: app/keystore.jks"
+            echo "ORG_GRADLE_PROJECT_storeFile=keystore.jks" >> $GITHUB_ENV
+          else
+            echo "⚠ Não tem SIGNING_KEY, gerando debug.keystore"
+            # Gera keystore de debug padrão
+            keytool -genkeypair -v \
+              -keystore app/debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug, O=Android, C=US"
+            echo "ORG_GRADLE_PROJECT_storeFile=debug.keystore" >> $GITHUB_ENV
+            echo "✅ debug.keystore gerado"
+          fi
+          
+          # Verifica se o keystore foi criado mesmo
+          echo "Verificando keystore..."
+          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
+            if [ -f "app/keystore.jks" ]; then
+              echo "✅ Keystore encontrado: app/keystore.jks"
+            else
+              echo "❌ ERRO: Keystore NÃO foi criado!"
+              exit 1
+            fi
+          else
+            if [ -f "app/debug.keystore" ]; then
+              echo "✅ debug.keystore encontrado: app/debug.keystore"
+            else
+              echo "❌ ERRO: debug.keystore NÃO foi criado!"
+              exit 1
+            fi
+          fi
+
       - name: Download e Aplicação do Ícone (Resistente a Erros)
         run: |
           sudo apt-get update && sudo apt-get install -y imagemagick webp || true
@@ -122,12 +166,36 @@ jobs:
             echo "<html><body style='background:#000;color:#fff'><h1>Carregando...</h1></body></html>" > app/src/main/assets/www/index.html
           fi
 
-      - name: Compilar APK e AAB (Release)
+      - name: Preparar Gradle
         run: |
           chmod +x gradlew
+          # DEBUG: Mostra as variáveis de ambiente
+          echo "=== DEBUG: Variáveis de Ambiente ==="
+          echo "ORG_GRADLE_PROJECT_storeFile: $ORG_GRADLE_PROJECT_storeFile"
+          echo "ORG_GRADLE_PROJECT_storePassword: $ORG_GRADLE_PROJECT_storePassword"
+          echo "ORG_GRADLE_PROJECT_keyAlias: $ORG_GRADLE_PROJECT_keyAlias"
+          echo "ORG_GRADLE_PROJECT_keyPassword: $ORG_GRADLE_PROJECT_keyPassword"
+
+      - name: Compilar APK e AAB (Release)
+        run: |
+          echo "=== COMPILANDO ==="
+          
+          # Limpa primeiro
           ./gradlew clean
-          ./gradlew assembleRelease --no-daemon
-          ./gradlew bundleRelease --no-daemon
+          
+          # Build APK Release
+          echo "Construindo APK..."
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          
+          # Build AAB Release  
+          echo "Construindo AAB..."
+          ./gradlew bundleRelease --no-daemon --stacktrace
+          
+          echo "=== BUILD COMPLETO ==="
+          echo "APKs gerados:"
+          find app/build/outputs/apk -name "*.apk" -type f | xargs ls -la
+          echo "AABs gerados:"
+          find app/build/outputs/bundle -name "*.aab" -type f | xargs ls -la
 
       - name: Upload dos Artefatos
         uses: actions/upload-artifact@v4
