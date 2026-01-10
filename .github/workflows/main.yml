@@ -24,17 +24,15 @@ jobs:
           distribution: 'temurin'
 
       # =========================
-      # KEYSTORE (REPO OU DEBUG)
+      # KEYSTORE
       # =========================
       - name: Configurar Keystore
         run: |
           echo "=== CONFIGURANDO KEYSTORE ==="
 
           if [ -f app/chave1.jks ]; then
-            echo "Keystore do repositório encontrado"
             echo "ORG_GRADLE_PROJECT_storeFile=chave1.jks" >> $GITHUB_ENV
           else
-            echo "Criando keystore debug"
             keytool -genkeypair -v \
               -keystore app/keystore.jks \
               -alias androiddebugkey \
@@ -60,14 +58,8 @@ jobs:
           find app/src/main/java -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; || true
 
       # =========================
-      # ÍCONE
+      # ÍCONE (SEM QUEBRAR R)
       # =========================
-      - name: Limpar ícones antigos (webp/png)
-        run: |
-          echo "=== REMOVENDO ÍCONES ANTIGOS ==="
-          rm -f app/src/main/res/mipmap-*/ic_launcher.*
-          rm -f app/src/main/res/mipmap-*/ic_launcher_round.*
-
       - name: Download e Aplicação do Ícone
         run: |
           echo "=== BAIXANDO ÍCONE ==="
@@ -77,15 +69,19 @@ jobs:
             --fail \
             "${{ github.event.client_payload.icon_url }}" \
             -o icone_usuario.png
-      
-          echo "=== APLICANDO ÍCONE ==="
-          for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            cp icone_usuario.png app/src/main/res/$dir/ic_launcher.png
-            cp icone_usuario.png app/src/main/res/$dir/ic_launcher_round.png
+
+          echo "=== SUBSTITUINDO ÍCONES EXISTENTES ==="
+          for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            BASE="app/src/main/res/mipmap-$dir"
+
+            [ -f "$BASE/ic_launcher.png" ] && cp icone_usuario.png "$BASE/ic_launcher.png"
+            [ -f "$BASE/ic_launcher.webp" ] && cp icone_usuario.png "$BASE/ic_launcher.webp"
+            [ -f "$BASE/ic_launcher_round.png" ] && cp icone_usuario.png "$BASE/ic_launcher_round.png"
+            [ -f "$BASE/ic_launcher_round.webp" ] && cp icone_usuario.png "$BASE/ic_launcher_round.webp"
           done
 
       # =========================
-      # JOGO
+      # JOGO (CONSTRUCT 3)
       # =========================
       - name: Extrair Jogo
         run: |
@@ -96,14 +92,14 @@ jobs:
           unzip -o jogo.zip -d app/src/main/assets/www/
 
           if [ ! -f app/src/main/assets/www/index.html ]; then
-            echo "<h1>Jogo carregado</h1>" > app/src/main/assets/www/index.html
+            echo "<h1>Erro: index.html não encontrado</h1>" > app/src/main/assets/www/index.html
           fi
 
       - name: Permissão Gradle
         run: chmod +x gradlew
 
       # =========================
-      # BUILD (ASSINADO PELO GRADLE)
+      # BUILD
       # =========================
       - name: Build APK e AAB
         run: |
