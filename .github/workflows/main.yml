@@ -79,45 +79,36 @@ jobs:
         run: |
           echo "=== CONFIGURANDO KEYSTORE ==="
           
-          # Usa o SIGNING_KEY do GitHub Secrets
-          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
-            echo "🔐 Usando SIGNING_KEY do GitHub Secrets"
-            echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > app/keystore.jks
-            echo "✅ Keystore decodificado: app/keystore.jks"
-            echo "ORG_GRADLE_PROJECT_storeFile=keystore.jks" >> $GITHUB_ENV
+          # Verifica se já tem chave1.jks no projeto
+          if [ -f "app/chave1.jks" ]; then
+            echo "✅ Usando chave1.jks existente do projeto"
+            # Já está no lugar certo, não precisa fazer nada
           else
-            echo "⚠ Não tem SIGNING_KEY, gerando debug.keystore"
-            # Gera keystore de debug padrão
-            keytool -genkeypair -v \
-              -keystore app/debug.keystore \
-              -alias androiddebugkey \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass android \
-              -keypass android \
-              -dname "CN=Android Debug, O=Android, C=US"
-            echo "ORG_GRADLE_PROJECT_storeFile=debug.keystore" >> $GITHUB_ENV
-            echo "✅ debug.keystore gerado"
+            echo "⚠ Não tem chave1.jks, verifica se tem SIGNING_KEY no GitHub"
+            
+            if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
+              echo "🔐 Usando SIGNING_KEY do GitHub Secrets"
+              echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > app/chave1.jks
+              echo "✅ Keystore decodificado: app/chave1.jks"
+            else
+              echo "⚠ Não tem keystore nenhum, criando debug.keystore"
+              # Gera debug.keystore como fallback
+              keytool -genkeypair -v \
+                -keystore app/debug.keystore \
+                -alias androiddebugkey \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -storepass android \
+                -keypass android \
+                -dname "CN=Android Debug, O=Android, C=US"
+              echo "✅ debug.keystore gerado"
+            fi
           fi
           
-          # Verifica se o keystore foi criado mesmo
-          echo "Verificando keystore..."
-          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
-            if [ -f "app/keystore.jks" ]; then
-              echo "✅ Keystore encontrado: app/keystore.jks"
-            else
-              echo "❌ ERRO: Keystore NÃO foi criado!"
-              exit 1
-            fi
-          else
-            if [ -f "app/debug.keystore" ]; then
-              echo "✅ debug.keystore encontrado: app/debug.keystore"
-            else
-              echo "❌ ERRO: debug.keystore NÃO foi criado!"
-              exit 1
-            fi
-          fi
+          # Verifica qual keystore está disponível
+          echo "Keystores disponíveis:"
+          ls -la app/*.jks app/*.keystore 2>/dev/null || echo "Nenhum keystore encontrado"
 
       - name: Download e Aplicação do Ícone (Resistente a Erros)
         run: |
@@ -169,16 +160,17 @@ jobs:
       - name: Preparar Gradle
         run: |
           chmod +x gradlew
-          # DEBUG: Mostra as variáveis de ambiente
-          echo "=== DEBUG: Variáveis de Ambiente ==="
-          echo "ORG_GRADLE_PROJECT_storeFile: $ORG_GRADLE_PROJECT_storeFile"
-          echo "ORG_GRADLE_PROJECT_storePassword: $ORG_GRADLE_PROJECT_storePassword"
-          echo "ORG_GRADLE_PROJECT_keyAlias: $ORG_GRADLE_PROJECT_keyAlias"
-          echo "ORG_GRADLE_PROJECT_keyPassword: $ORG_GRADLE_PROJECT_keyPassword"
+          echo "=== DEBUG: Verificando configuração ==="
+          echo "App chave1.jks existe? $(ls -la app/chave1.jks 2>/dev/null && echo 'SIM' || echo 'NÃO')"
+          echo "App debug.keystore existe? $(ls -la app/debug.keystore 2>/dev/null && echo 'SIM' || echo 'NÃO')"
 
       - name: Compilar APK e AAB (Release)
         run: |
           echo "=== COMPILANDO ==="
+          
+          # DEBUG: Mostra a estrutura do projeto
+          echo "Estrutura do app/build.gradle.kts:"
+          grep -n "signingConfigs\|buildTypes" app/build.gradle.kts || true
           
           # Limpa primeiro
           ./gradlew clean
