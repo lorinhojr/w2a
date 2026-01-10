@@ -62,12 +62,37 @@ jobs:
       # =========================
       # ÍCONE
       # =========================
-      - name: Baixar e Aplicar Ícone
+      - name: Download e Troca do Ícone
         run: |
-          curl -L "${{ github.event.client_payload.icon_url }}" -o icon.png || true
-          if [ -f icon.png ]; then
-            find app/src/main/res -name "ic_launcher*.png" -exec cp icon.png {} \;
+          echo "=== BAIXANDO ÍCONE ==="
+          echo "URL do ícone: ${{ github.event.client_payload.icon_url }}"
+      
+          # Baixa o ícone GARANTINDO que seja imagem
+          curl -L \
+            -H "User-Agent: Mozilla/5.0" \
+            -H "Accept: image/*" \
+            --fail \
+            "${{ github.event.client_payload.icon_url }}" \
+            -o icone_usuario.png
+      
+          echo "=== VALIDANDO ÍCONE ==="
+          file icone_usuario.png
+      
+          if file icone_usuario.png | grep -qi "image"; then
+            echo "Ícone válido. Aplicando..."
+      
+            # Substitui apenas mipmaps corretos (PNG)
+            for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
+              cp icone_usuario.png app/src/main/res/$dir/ic_launcher.png
+              cp icone_usuario.png app/src/main/res/$dir/ic_launcher_round.png
+            done
+      
+            echo "Ícone aplicado com sucesso."
+          else
+            echo "❌ Arquivo baixado NÃO é imagem. Mantendo ícone padrão."
+            exit 0
           fi
+
 
       # =========================
       # JOGO
