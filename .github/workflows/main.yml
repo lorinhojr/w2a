@@ -203,74 +203,47 @@ jobs:
         run: |
           echo "Build Finalizado. Status: ${{ job.status }}"
 
-      - name: Notificar Callback
+            - name: Enviar Notificação de Status
         if: always()
         run: |
-          echo "=== NOTIFICANDO CALLBACK ==="
+          echo "=== ENVIANDO NOTIFICAÇÃO ==="
           
-          # Dados do build
           APP_ID="${{ github.event.client_payload.app_id }}"
           CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
-          RUN_ID="${{ github.run_id }}"
-          REPO="${{ github.repository }}"
-          RUN_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
           
-          # Verificar se tem URL de callback
-          if [ -n "$CALLBACK_URL" ]; then
-            echo "Enviando callback para: $CALLBACK_URL"
+          if [ -n "$CALLBACK_URL" ] && [ -n "$APP_ID" ]; then
+            echo "Enviando para: $CALLBACK_URL"
             
-            # Determinar status do job
-            if [ "${{ job.status }}" = "success" ]; then
+            # Determinar status
+            if [ "${{ job.status }}" == "success" ]; then
               STATUS="success"
-              MESSAGE="Build concluído com sucesso"
-              
-              # Construir URLs dos artefatos
-              ARTIFACTS_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
-              DOWNLOAD_URL="https://nightly.link/$REPO/actions/runs/$RUN_ID"
-              
-              # Payload de sucesso
-              PAYLOAD=$(cat << EOF
-{
-  "app_id": "$APP_ID",
-  "status": "$STATUS",
-  "message": "$MESSAGE",
-  "run_id": "$RUN_ID",
-  "run_url": "$RUN_URL",
-  "repository": "$REPO",
-  "artifacts_url": "$ARTIFACTS_URL",
-  "download_url": "$DOWNLOAD_URL"
-}
-EOF
-              )
+              MESSAGE="Build concluído com sucesso!"
             else
               STATUS="failure"
               MESSAGE="Build falhou"
-              
-              # Payload de falha
-              PAYLOAD=$(cat << EOF
-{
-  "app_id": "$APP_ID",
-  "status": "$STATUS",
-  "message": "$MESSAGE",
-  "run_id": "$RUN_ID",
-  "run_url": "$RUN_URL",
-  "repository": "$REPO"
-}
-EOF
-              )
             fi
             
-            echo "Payload: $PAYLOAD"
+            # Dados do build
+            REPO="${{ github.repository }}"
+            RUN_ID="${{ github.run_id }}"
+            RUN_URL="${{ github.server_url }}/$REPO/actions/runs/$RUN_ID"
             
-            # Enviar callback
-            curl -X POST \
+            # Enviar POST para callback
+            curl -X POST "$CALLBACK_URL" \
               -H "Content-Type: application/json" \
-              -d "$PAYLOAD" \
-              --retry 3 \
+              -d "{
+                \"app_id\": \"$APP_ID\",
+                \"status\": \"$STATUS\",
+                \"message\": \"$MESSAGE\",
+                \"run_id\": \"$RUN_ID\",
+                \"run_url\": \"$RUN_URL\",
+                \"repository\": \"$REPO\",
+                \"timestamp\": \"$(date -Iseconds)\"
+              }" \
               --max-time 10 \
-              "$CALLBACK_URL"
+              --silent --show-error
             
-            echo "✅ Callback enviado"
+            echo "✅ Notificação enviada"
           else
-            echo "⚠ Sem URL de callback configurada"
+            echo "⚠ Sem URL de callback ou App ID"
           fi
