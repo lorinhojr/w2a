@@ -71,9 +71,21 @@ android {
         jvmTarget = "11"
     }
     
-    // Ativar compressão de recursos WebP
-    aaptOptions {
-        cruncherEnabled = false
+    // Configurações de recursos - REMOVIDA aaptOptions depreciada
+    androidResources {
+        // Desabilitar compressão para WebP (se necessário)
+        ignoreAssetsPattern += "!.webp:!.webm:!.mp4:!.mp3:!.ogg:!.wav"
+    }
+    
+    // Habilitar namespace para recursos
+    buildFeatures {
+        buildConfig = true
+        viewBinding = false
+        dataBinding = false
+        aidl = true
+        renderScript = false
+        resValues = false
+        shaders = false
     }
 }
 
