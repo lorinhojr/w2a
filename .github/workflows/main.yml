@@ -1,4 +1,4 @@
-name: Fabrica SAAS
+name: W2A builder
 
 on:
   repository_dispatch:
@@ -58,9 +58,9 @@ jobs:
           find app/src/main/java -type f -exec sed -i "s/PACOTE_DINAMICO/${{ github.event.client_payload.package_name }}/g" {} \; || true
 
       # =========================
-      # ÍCONE (SEM QUEBRAR R)
+      # ÍCONE (WEBP CORRETO)
       # =========================
-      - name: Download e Aplicação do Ícone
+      - name: Atualizar Ícone do App
         run: |
           echo "=== BAIXANDO ÍCONE ==="
           curl -L \
@@ -68,16 +68,17 @@ jobs:
             -H "Accept: image/*" \
             --fail \
             "${{ github.event.client_payload.icon_url }}" \
-            -o icone_usuario.png
+            -o icon.png
 
-          echo "=== SUBSTITUINDO ÍCONES EXISTENTES ==="
-          for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            BASE="app/src/main/res/mipmap-$dir"
+          sudo apt-get update
+          sudo apt-get install -y webp
 
-            [ -f "$BASE/ic_launcher.png" ] && cp icone_usuario.png "$BASE/ic_launcher.png"
-            [ -f "$BASE/ic_launcher.webp" ] && cp icone_usuario.png "$BASE/ic_launcher.webp"
-            [ -f "$BASE/ic_launcher_round.png" ] && cp icone_usuario.png "$BASE/ic_launcher_round.png"
-            [ -f "$BASE/ic_launcher_round.webp" ] && cp icone_usuario.png "$BASE/ic_launcher_round.webp"
+          cwebp -q 100 icon.png -o icon.webp
+
+          echo "=== SUBSTITUINDO ÍCONES WEBP ==="
+          for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
+            cp icon.webp app/src/main/res/$dir/ic_launcher.webp
+            cp icon.webp app/src/main/res/$dir/ic_launcher_round.webp
           done
 
       # =========================
