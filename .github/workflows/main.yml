@@ -298,6 +298,9 @@ EOF
 
       - name: Extrair jogo (HTML/Construct)
         run: |
+          # Definir variáveis novamente pois este é um passo separado
+          APP_NAME="${{ github.event.client_payload.app_name }}"
+          
           echo "=== EXTRAINDO JOGO ==="
           
           # Criar diretório se não existir
