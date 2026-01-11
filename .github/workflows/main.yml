@@ -234,3 +234,18 @@ jobs:
           else
             echo "⚠ Sem callback configurado"
           fi
+
+      - name: Criar Release Pública (Download sem Login)
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "Build ${{ github.event.client_payload.app_name || 'App' }} - $(date +'%d/%m/%Y %H:%M')"
+          tag_name: "build-${{ github.run_id }}"
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
