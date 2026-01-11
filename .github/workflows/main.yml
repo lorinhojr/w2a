@@ -237,23 +237,23 @@ jobs:
             echo "⚠ Sem callback configurado"
           fi
 
-        - name: Criar Release Pública (Download sem Login)
-                if: success()
-                uses: softprops/action-gh-release@v1
-                with:
-                  name: "${{ github.event.client_payload.app_id }}"
-                  tag_name: "build-${{ github.run_id }}-${{ github.event.client_payload.app_id }}"
-                  files: |
-                    app/build/outputs/apk/release/*.apk
-                    app/build/outputs/bundle/release/*.aab
-                  draft: false
-                  prerelease: false
-                  generate_release_notes: false
-                  body: |
-                    **App:** ${{ github.event.client_payload.app_name || 'Sem nome' }}
-                    **Build ID:** ${{ github.event.client_payload.app_id }}
-                    **Data:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-                    
-                    Gerado automaticamente pelo W2A Builder.
-                env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Criar Release Pública (Download sem Login)
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "${{ github.event.client_payload.app_id }}"
+          tag_name: "build-${{ github.run_id }}-${{ github.event.client_payload.app_id }}"
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            **App:** ${{ github.event.client_payload.app_name || 'Sem nome' }}
+            **Build ID:** ${{ github.event.client_payload.app_id }}
+            **Data:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            
+            Gerado automaticamente pelo W2A Builder.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
