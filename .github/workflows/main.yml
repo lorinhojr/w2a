@@ -237,27 +237,23 @@ jobs:
             echo "⚠ Sem callback configurado"
           fi
 
-            - name: Criar Release Pública (Download sem Login)
-        if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          # Nome da release será APENAS o ID do app (ex: app_6963b7bef415a5.37469138)
-          name: "${{ github.event.client_payload.app_id }}"
-          # Tag única (não aparece no título)
-          tag_name: "build-${{ github.run_id }}-${{ github.event.client_payload.app_id }}"
-          # Procura pelos arquivos que seu workflow já gera
-          files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          draft: false
-          prerelease: false
-          generate_release_notes: false  # Desliga as notas automáticas
-          # OPCIONAL: Adiciona descrição com mais detalhes
-          body: |
-            **App:** ${{ github.event.client_payload.app_name || 'Sem nome' }}
-            **Build ID:** ${{ github.event.client_payload.app_id }}
-            **Data:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            
-            Gerado automaticamente pelo W2A Builder.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        - name: Criar Release Pública (Download sem Login)
+                if: success()
+                uses: softprops/action-gh-release@v1
+                with:
+                  name: "${{ github.event.client_payload.app_id }}"
+                  tag_name: "build-${{ github.run_id }}-${{ github.event.client_payload.app_id }}"
+                  files: |
+                    app/build/outputs/apk/release/*.apk
+                    app/build/outputs/bundle/release/*.aab
+                  draft: false
+                  prerelease: false
+                  generate_release_notes: false
+                  body: |
+                    **App:** ${{ github.event.client_payload.app_name || 'Sem nome' }}
+                    **Build ID:** ${{ github.event.client_payload.app_id }}
+                    **Data:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+                    
+                    Gerado automaticamente pelo W2A Builder.
+                env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
