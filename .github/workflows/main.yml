@@ -25,17 +25,56 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Personalizar Projeto (Dinâmico e Completo)
+      # NOVO PASSO: Processar Keystore Personalizada
+      - name: Processar Keystore Personalizada
+        id: custom_keystore
+        run: |
+          echo "=== PROCESSANDO KEYSTORE PERSONALIZADA ==="
+          
+          # Verificar se o usuário enviou keystore personalizada
+          if [ -n "${{ github.event.client_payload.keystore_base64 }}" ]; then
+            echo "✅ Usuário forneceu keystore personalizada"
+            
+            # Decodificar e salvar a keystore
+            echo "${{ github.event.client_payload.keystore_base64 }}" | base64 --decode > app/chave1.jks
+            echo "📁 Keystore personalizada salva como app/chave1.jks"
+            
+            # Configurar variáveis de ambiente com os dados do usuário
+            if [ -n "${{ github.event.client_payload.keystore_password }}" ]; then
+              echo "ORG_GRADLE_PROJECT_storePassword=${{ github.event.client_payload.keystore_password }}" >> $GITHUB_ENV
+            fi
+            
+            if [ -n "${{ github.event.client_payload.key_password }}" ]; then
+              echo "ORG_GRADLE_PROJECT_keyPassword=${{ github.event.client_payload.key_password }}" >> $GITHUB_ENV
+            fi
+            
+            if [ -n "${{ github.event.client_payload.key_alias }}" ]; then
+              echo "ORG_GRADLE_PROJECT_keyAlias=${{ github.event.client_payload.key_alias }}" >> $GITHUB_ENV
+            fi
+            
+            echo "✅ Variáveis de ambiente configuradas com dados do usuário"
+          else
+            echo "ℹ️  Usuário escolheu keystore automática"
+            echo "📁 Usando keystore padrão do sistema"
+          fi
+
+      - name: Personalizar Projeto (Com Versão)
         run: |
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.app_name }}"
+          APP_VERSION="${{ github.event.client_payload.app_version || '1.0.0' }}"
           PKG_PATH=$(echo "$PKG" | tr '.' '/')
 
           echo "=========================================="
           echo "INICIANDO PERSONALIZAÇÃO COMPLETA"
           echo "=========================================="
+          echo "App: $APP_NAME"
+          echo "Package: $PKG"
+          echo "Versão: $APP_VERSION"
+          echo "Tipo Assinatura: ${{ github.event.client_payload.signing_type || 'auto' }}"
+          echo "=========================================="
 
-          # 1. STRINGS - Validação e Troca
+          # 1. STRINGS
           if [ -f "app/src/main/res/values/strings.xml" ]; then
             sed -i "s/NOME_DINAMICO/$APP_NAME/g" app/src/main/res/values/strings.xml
             echo "✓ Strings atualizadas"
@@ -43,33 +82,32 @@ jobs:
             echo "ERROR: strings.xml não encontrado" && exit 1
           fi
 
-          # 2. MANIFEST - Correção de Namespace para AAB
+          # 2. MANIFEST
           if [ -f "app/src/main/AndroidManifest.xml" ]; then
-            # Remove o atributo package da tag manifest (Obrigatório para Gradle 8+)
             sed -i 's/package="[^"]*"//g' app/src/main/AndroidManifest.xml
-            # Substitui placeholders internos
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/src/main/AndroidManifest.xml
             echo "✓ Manifest atualizado"
           fi
 
-          # 3. GRADLE - Ajuste de build.gradle.kts
+          # 3. GRADLE - COM VERSÃO
           if [ -f "app/build.gradle.kts" ]; then
             sed -i "s/namespace = \".*\"/namespace = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/applicationId = \".*\"/applicationId = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/build.gradle.kts
-            echo "✓ Build.gradle.kts atualizado"
+            
+            # ATUALIZAR VERSÃO
+            sed -i "s/versionName = \".*\"/versionName = \"$APP_VERSION\"/g" app/build.gradle.kts
+            echo "✓ Build.gradle.kts atualizado com versionName = $APP_VERSION"
           fi
 
-          # 4. JAVA - Reorganização completa de pastas
+          # 4. JAVA
           echo "Reorganizando estrutura Java..."
-          # Localiza a MainActivity independente de onde ela esteja
           OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
           if [ -n "$OLD_PATH" ]; then
             mkdir -p "app/src/main/java/$PKG_PATH"
             mv "$OLD_PATH" "app/src/main/java/$PKG_PATH/MainActivity.java"
             sed -i "s/package .*/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
             sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            # Remove pastas antigas que ficaram vazias
             find app/src/main/java -type d -empty -delete
             echo "✓ Java reorganizado para $PKG"
           fi
@@ -77,24 +115,23 @@ jobs:
           # 5. PROGUARD
           [ -f "app/proguard-rules.pro" ] && sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
 
-      - name: Configurar Keystore
+      - name: Configurar Keystore (Fallback)
         run: |
-          echo "=== CONFIGURANDO KEYSTORE ==="
+          echo "=== CONFIGURANDO KEYSTORE (FALLBACK) ==="
           
-          # Verifica se já tem chave1.jks no projeto
+          # Verificar se já existe chave1.jks (do passo anterior ou do projeto)
           if [ -f "app/chave1.jks" ]; then
-            echo "✅ Usando chave1.jks existente do projeto"
-            # Já está no lugar certo, não precisa fazer nada
+            echo "✅ Keystore já disponível: app/chave1.jks"
+            echo "Tamanho: $(wc -c < app/chave1.jks) bytes"
           else
-            echo "⚠ Não tem chave1.jks, verifica se tem SIGNING_KEY no GitHub"
+            echo "⚠️  Não tem chave1.jks, verificando SIGNING_KEY..."
             
             if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
               echo "🔐 Usando SIGNING_KEY do GitHub Secrets"
               echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > app/chave1.jks
-              echo "✅ Keystore decodificado: app/chave1.jks"
+              echo "✅ Keystore decodificada do secret"
             else
-              echo "⚠ Não tem keystore nenhum, criando debug.keystore"
-              # Gera debug.keystore como fallback
+              echo "⚠️  Não tem keystore nenhum, criando debug.keystore"
               keytool -genkeypair -v \
                 -keystore app/debug.keystore \
                 -alias androiddebugkey \
@@ -104,15 +141,14 @@ jobs:
                 -storepass android \
                 -keypass android \
                 -dname "CN=Android Debug, O=Android, C=US"
-              echo "✅ debug.keystore gerado"
+              echo "✅ debug.keystore gerado como fallback"
             fi
           fi
           
-          # Verifica qual keystore está disponível
           echo "Keystores disponíveis:"
           ls -la app/*.jks app/*.keystore 2>/dev/null || echo "Nenhum keystore encontrado"
 
-      - name: Download e Aplicação do Ícone (Resistente a Erros)
+      - name: Download e Aplicação do Ícone
         run: |
           sudo apt-get update && sudo apt-get install -y imagemagick webp || true
           ICON_URL="${{ github.event.client_payload.icon_url }}"
@@ -131,11 +167,10 @@ jobs:
             mkdir -p "app/src/main/res/$dir"
             cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher.webp"
             cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher_round.webp"
-            # Remove PNGs antigos para não dar conflito
             rm -f "app/src/main/res/$dir/ic_launcher.png" "app/src/main/res/$dir/ic_launcher_round.png"
           done
 
-      - name: Extrair Assets do Jogo (Construct/HTML5)
+      - name: Extrair Assets do Jogo
         run: |
           mkdir -p app/src/main/assets/www
           rm -rf app/src/main/assets/www/*
@@ -144,7 +179,6 @@ jobs:
             curl -L "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
             if [ -s /tmp/jogo.zip ]; then
               unzip -o /tmp/jogo.zip -d app/src/main/assets/www/
-              # Move arquivos se estiverem dentro de uma subpasta no ZIP
               if [ ! -f "app/src/main/assets/www/index.html" ]; then
                 SEARCH_INDEX=$(find app/src/main/assets/www -name "index.html" | head -1)
                 if [ -n "$SEARCH_INDEX" ]; then
@@ -164,13 +198,17 @@ jobs:
           echo "=== DEBUG: Verificando configuração ==="
           echo "App chave1.jks existe? $(ls -la app/chave1.jks 2>/dev/null && echo 'SIM' || echo 'NÃO')"
           echo "App debug.keystore existe? $(ls -la app/debug.keystore 2>/dev/null && echo 'SIM' || echo 'NÃO')"
+          echo "Variáveis de ambiente:"
+          echo "storePassword: $ORG_GRADLE_PROJECT_storePassword"
+          echo "keyPassword: $ORG_GRADLE_PROJECT_keyPassword"
+          echo "keyAlias: $ORG_GRADLE_PROJECT_keyAlias"
 
       - name: Compilar APK e AAB (Release)
         run: |
           echo "=== COMPILANDO ==="
           
           echo "Estrutura do app/build.gradle.kts:"
-          grep -n "signingConfigs\|buildTypes" app/build.gradle.kts || true
+          grep -n "signingConfigs\|buildTypes\|versionName" app/build.gradle.kts || true
           
           ./gradlew clean
           
@@ -195,48 +233,6 @@ jobs:
             app/build/outputs/bundle/release/*.aab
           retention-days: 7
 
-      - name: Enviar Callback de Status
-        if: always()
-        run: |
-          echo "=== ENVIANDO CALLBACK ==="
-          
-          APP_ID="${{ github.event.client_payload.app_id }}"
-          CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
-          
-          if [ -n "$CALLBACK_URL" ] && [ -n "$APP_ID" ]; then
-            echo "URL do Callback: $CALLBACK_URL"
-            
-            if [ "${{ job.status }}" == "success" ]; then
-              STATUS="success"
-              MESSAGE="Build concluído com sucesso!"
-            else
-              STATUS="failure"
-              MESSAGE="Build falhou"
-            fi
-            
-            REPO="${{ github.repository }}"
-            RUN_ID="${{ github.run_id }}"
-            RUN_URL="${{ github.server_url }}/$REPO/actions/runs/$RUN_ID"
-            
-            curl -X POST "$CALLBACK_URL" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"app_id\": \"$APP_ID\",
-                \"status\": \"$STATUS\",
-                \"message\": \"$MESSAGE\",
-                \"run_id\": \"$RUN_ID\",
-                \"run_url\": \"$RUN_URL\",
-                \"repository\": \"$REPO\",
-                \"timestamp\": \"$(date -Iseconds)\"
-              }" \
-              --max-time 10 \
-              --silent --show-error \
-              && echo "✅ Callback enviado" \
-              || echo "⚠ Callback falhou (build ainda concluído)"
-          else
-            echo "⚠ Sem callback configurado"
-          fi
-
       - name: Criar Release Pública (Download sem Login)
         if: success()
         uses: softprops/action-gh-release@v1
@@ -251,8 +247,13 @@ jobs:
           generate_release_notes: false
           body: |
             **App:** ${{ github.event.client_payload.app_name || 'Sem nome' }}
+            **Versão:** ${{ github.event.client_payload.app_version || '1.0.0' }}
             **Build ID:** ${{ github.event.client_payload.app_id }}
+            **Package:** ${{ github.event.client_payload.package_name }}
+            **Data:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
             
             Gerado automaticamente pelo W2A Builder.
+            
+            **Tipo de Assinatura:** ${{ github.event.client_payload.signing_type || 'Automática' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
