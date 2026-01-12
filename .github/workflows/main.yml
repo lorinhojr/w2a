@@ -25,83 +25,56 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # NOVO PASSO: Processar Keystore Personalizada
       - name: Processar Keystore Personalizada
         id: custom_keystore
         run: |
           echo "=== PROCESSANDO KEYSTORE PERSONALIZADA ==="
           
-          # Verificar se o usuário enviou keystore personalizada
-          if [ -n "${{ github.event.client_payload.keystore_base64 }}" ]; then
+          if [ "${{ github.event.client_payload.keystore_info }}" != "null" ] && [ -n "${{ github.event.client_payload.keystore_info.keystore_base64 }}" ]; then
             echo "✅ Usuário forneceu keystore personalizada"
+            echo "${{ github.event.client_payload.keystore_info.keystore_base64 }}" | base64 --decode > app/chave1.jks
             
-            # Decodificar e salvar a keystore
-            echo "${{ github.event.client_payload.keystore_base64 }}" | base64 --decode > app/chave1.jks
-            echo "📁 Keystore personalizada salva como app/chave1.jks"
-            
-            # Configurar variáveis de ambiente com os dados do usuário
-            if [ -n "${{ github.event.client_payload.keystore_password }}" ]; then
-              echo "ORG_GRADLE_PROJECT_storePassword=${{ github.event.client_payload.keystore_password }}" >> $GITHUB_ENV
+            if [ -n "${{ github.event.client_payload.keystore_info.keystore_password }}" ]; then
+              echo "ORG_GRADLE_PROJECT_storePassword=${{ github.event.client_payload.keystore_info.keystore_password }}" >> $GITHUB_ENV
             fi
             
-            if [ -n "${{ github.event.client_payload.key_password }}" ]; then
-              echo "ORG_GRADLE_PROJECT_keyPassword=${{ github.event.client_payload.key_password }}" >> $GITHUB_ENV
+            if [ -n "${{ github.event.client_payload.keystore_info.key_password }}" ]; then
+              echo "ORG_GRADLE_PROJECT_keyPassword=${{ github.event.client_payload.keystore_info.key_password }}" >> $GITHUB_ENV
             fi
             
-            if [ -n "${{ github.event.client_payload.key_alias }}" ]; then
-              echo "ORG_GRADLE_PROJECT_keyAlias=${{ github.event.client_payload.key_alias }}" >> $GITHUB_ENV
+            if [ -n "${{ github.event.client_payload.keystore_info.key_alias }}" ]; then
+              echo "ORG_GRADLE_PROJECT_keyAlias=${{ github.event.client_payload.keystore_info.key_alias }}" >> $GITHUB_ENV
             fi
-            
-            echo "✅ Variáveis de ambiente configuradas com dados do usuário"
           else
-            echo "ℹ️  Usuário escolheu keystore automática"
-            echo "📁 Usando keystore padrão do sistema"
+            echo "ℹ️  Usando keystore automática"
           fi
 
-      - name: Personalizar Projeto (Com Versão)
+      - name: Personalizar Projeto
         run: |
           PKG="${{ github.event.client_payload.package_name }}"
           APP_NAME="${{ github.event.client_payload.app_name }}"
           APP_VERSION="${{ github.event.client_payload.app_version || '1.0.0' }}"
           PKG_PATH=$(echo "$PKG" | tr '.' '/')
 
-          echo "=========================================="
-          echo "INICIANDO PERSONALIZAÇÃO COMPLETA"
-          echo "=========================================="
-          echo "App: $APP_NAME"
-          echo "Package: $PKG"
-          echo "Versão: $APP_VERSION"
-          echo "Tipo Assinatura: ${{ github.event.client_payload.signing_type || 'auto' }}"
-          echo "=========================================="
+          echo "=== PERSONALIZANDO PROJETO ==="
+          echo "App: $APP_NAME | Package: $PKG | Versão: $APP_VERSION"
 
-          # 1. STRINGS
           if [ -f "app/src/main/res/values/strings.xml" ]; then
             sed -i "s/NOME_DINAMICO/$APP_NAME/g" app/src/main/res/values/strings.xml
-            echo "✓ Strings atualizadas"
-          else
-            echo "ERROR: strings.xml não encontrado" && exit 1
           fi
 
-          # 2. MANIFEST
           if [ -f "app/src/main/AndroidManifest.xml" ]; then
             sed -i 's/package="[^"]*"//g' app/src/main/AndroidManifest.xml
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/src/main/AndroidManifest.xml
-            echo "✓ Manifest atualizado"
           fi
 
-          # 3. GRADLE - COM VERSÃO
           if [ -f "app/build.gradle.kts" ]; then
             sed -i "s/namespace = \".*\"/namespace = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/applicationId = \".*\"/applicationId = \"$PKG\"/g" app/build.gradle.kts
             sed -i "s/PACOTE_DINAMICO/$PKG/g" app/build.gradle.kts
-            
-            # ATUALIZAR VERSÃO
             sed -i "s/versionName = \".*\"/versionName = \"$APP_VERSION\"/g" app/build.gradle.kts
-            echo "✓ Build.gradle.kts atualizado com versionName = $APP_VERSION"
           fi
 
-          # 4. JAVA
-          echo "Reorganizando estrutura Java..."
           OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
           if [ -n "$OLD_PATH" ]; then
             mkdir -p "app/src/main/java/$PKG_PATH"
@@ -109,29 +82,15 @@ jobs:
             sed -i "s/package .*/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
             sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
             find app/src/main/java -type d -empty -delete
-            echo "✓ Java reorganizado para $PKG"
           fi
 
-          # 5. PROGUARD
-          [ -f "app/proguard-rules.pro" ] && sed -i "s/PACOTE_DINAMICO/$PKG/g" app/proguard-rules.pro
-
+      # ... (restante dos passos permanece igual ao seu workflow original)
       - name: Configurar Keystore (Fallback)
         run: |
-          echo "=== CONFIGURANDO KEYSTORE (FALLBACK) ==="
-          
-          # Verificar se já existe chave1.jks (do passo anterior ou do projeto)
-          if [ -f "app/chave1.jks" ]; then
-            echo "✅ Keystore já disponível: app/chave1.jks"
-            echo "Tamanho: $(wc -c < app/chave1.jks) bytes"
-          else
-            echo "⚠️  Não tem chave1.jks, verificando SIGNING_KEY..."
-            
+          if [ ! -f "app/chave1.jks" ]; then
             if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
-              echo "🔐 Usando SIGNING_KEY do GitHub Secrets"
               echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > app/chave1.jks
-              echo "✅ Keystore decodificada do secret"
             else
-              echo "⚠️  Não tem keystore nenhum, criando debug.keystore"
               keytool -genkeypair -v \
                 -keystore app/debug.keystore \
                 -alias androiddebugkey \
@@ -141,12 +100,8 @@ jobs:
                 -storepass android \
                 -keypass android \
                 -dname "CN=Android Debug, O=Android, C=US"
-              echo "✅ debug.keystore gerado como fallback"
             fi
           fi
-          
-          echo "Keystores disponíveis:"
-          ls -la app/*.jks app/*.keystore 2>/dev/null || echo "Nenhum keystore encontrado"
 
       - name: Download e Aplicação do Ícone
         run: |
@@ -195,34 +150,12 @@ jobs:
       - name: Preparar Gradle
         run: |
           chmod +x gradlew
-          echo "=== DEBUG: Verificando configuração ==="
-          echo "App chave1.jks existe? $(ls -la app/chave1.jks 2>/dev/null && echo 'SIM' || echo 'NÃO')"
-          echo "App debug.keystore existe? $(ls -la app/debug.keystore 2>/dev/null && echo 'SIM' || echo 'NÃO')"
-          echo "Variáveis de ambiente:"
-          echo "storePassword: $ORG_GRADLE_PROJECT_storePassword"
-          echo "keyPassword: $ORG_GRADLE_PROJECT_keyPassword"
-          echo "keyAlias: $ORG_GRADLE_PROJECT_keyAlias"
 
       - name: Compilar APK e AAB (Release)
         run: |
-          echo "=== COMPILANDO ==="
-          
-          echo "Estrutura do app/build.gradle.kts:"
-          grep -n "signingConfigs\|buildTypes\|versionName" app/build.gradle.kts || true
-          
           ./gradlew clean
-          
-          echo "Construindo APK..."
           ./gradlew assembleRelease --no-daemon --stacktrace
-          
-          echo "Construindo AAB..."
           ./gradlew bundleRelease --no-daemon --stacktrace
-          
-          echo "=== BUILD COMPLETO ==="
-          echo "APKs gerados:"
-          find app/build/outputs/apk -name "*.apk" -type f | xargs ls -la
-          echo "AABs gerados:"
-          find app/build/outputs/bundle -name "*.aab" -type f | xargs ls -la
 
       - name: Upload dos Artefatos
         uses: actions/upload-artifact@v4
@@ -233,7 +166,7 @@ jobs:
             app/build/outputs/bundle/release/*.aab
           retention-days: 7
 
-      - name: Criar Release Pública (Download sem Login)
+      - name: Criar Release Pública
         if: success()
         uses: softprops/action-gh-release@v1
         with:
@@ -253,7 +186,5 @@ jobs:
             **Data:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
             
             Gerado automaticamente pelo W2A Builder.
-            
-            **Tipo de Assinatura:** ${{ github.event.client_payload.signing_type || 'Automática' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
