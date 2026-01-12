@@ -129,10 +129,10 @@ dependencies {
     implementation("androidx.legacy:legacy-support-v4:1.0.0")
     
     // 3. PARA ADMOB (opcional - adicione só se for usar)
-    // implementation("com.google.android.gms:play-services-ads:22.6.0")
+    implementation("com.google.android.gms:play-services-ads:22.6.0")
     
     // 4. PARA GOOGLE PLAY SERVICES (opcional)
-    // implementation("com.google.android.gms:play-services-base:18.3.0")
+    implementation("com.google.android.gms:play-services-base:18.3.0")
     
     // 5. Para permissões em tempo de execução (Android 6+)
     implementation("androidx.activity:activity-ktx:1.8.0")
