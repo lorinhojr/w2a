@@ -183,7 +183,6 @@ jobs:
             **Versão:** ${{ github.event.client_payload.app_version || '1.0.0' }}
             **Build ID:** ${{ github.event.client_payload.app_id }}
             **Package:** ${{ github.event.client_payload.package_name }}
-            **Data:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
             
             Gerado automaticamente pelo W2A Builder.
         env:
