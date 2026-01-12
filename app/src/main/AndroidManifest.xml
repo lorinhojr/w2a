@@ -1,159 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:versionCode="1"
-    android:versionName="1.0"
     package="PACOTE_DINAMICO">
 
-    <!-- ========== SUPORTE A TELAS ========== -->
-    <supports-screens
-        android:anyDensity="true"
-        android:largeScreens="true"
-        android:normalScreens="true"
-        android:resizeable="true"
-        android:smallScreens="true"
-        android:xlargeScreens="true"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- ========== PERMISSÕES SEGURAS ========== -->
-    <!-- Permissões BÁSICAS -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    
-    <!-- Permissões de ARMAZENAMENTO -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    
-    <!-- Permissões de ÁUDIO -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    
-    <!-- Permissões de LOCALIZAÇÃO -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    
-    <!-- Permissões de VIBRAÇÃO -->
-    <uses-permission android:name="android.permission.VIBRATE" />
-    
-    <!-- Permissões para NOTIFICAÇÕES (Android 13+) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    
-    <!-- REMOVIDAS (perigosas para Play Store):
-         android.permission.READ_PHONE_STATE
-         android.permission.GET_ACCOUNTS
-         com.android.vending.BILLING (use Google Play Billing Library)
-    -->
-
-    <!-- ========== FEATURES OPCIONAIS ========== -->
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
-    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
-    <uses-feature android:name="android.hardware.location.network" android:required="false" />
-
-    <!-- ========== APLICAÇÃO ========== -->
     <application
         android:allowBackup="true"
-        android:debuggable="false"
         android:hardwareAccelerated="true"
-        android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
+        android:largeHeap="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-        
-        <!-- Configurações para Android 10+ -->
-        android:requestLegacyExternalStorage="true"
-        android:extractNativeLibs="true"
-        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
-        
-        <!-- Para segurança de rede -->
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:icon="@mipmap/ic_launcher"
+        android:label="App">
 
-        <!-- ========== ACTIVITY PRINCIPAL ========== -->
-        <!-- ORIENTAÇÃO: "unspecified" = automática (sistema decide) -->
-        <!-- "fullUser" = segue preferência do usuário -->
-        <!-- "sensor" = segue sensor (recomendado para jogos) -->
-        
         <activity
             android:name=".MainActivity"
-            android:label="@string/app_name"
-            android:launchMode="singleTop"
-            
-            <!-- **ORIENTAÇÃO AUTOMÁTICA - ESCOLHA UMA:** -->
-            <!-- android:screenOrientation="unspecified" -->  <!-- Sistema decide -->
-            <!-- android:screenOrientation="fullUser" -->     <!-- Segue usuário -->
-            android:screenOrientation="sensor"                <!-- Segue sensor (RECOMENDADO) -->
-            
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-            android:windowSoftInputMode="adjustResize"
-            
-            <!-- Configurações do C2 que são boas -->
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
-            
-            <!-- Para telas notch/alongadas -->
-            android:maxAspectRatio="2.4"
-            android:resizeableActivity="true">
-
-            <intent-filter android:label="@string/app_name">
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-            <!-- Intent filters para plugins -->
+            android:exported="true"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode">
             <intent-filter>
-                <action android:name="android.media.action.IMAGE_CAPTURE" />
-                <category android:name="android.intent.category.DEFAULT" />
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-
         </activity>
 
-        <!-- ========== PROVIDER DO C2 (ATUALIZADO) ========== -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileProvider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/provider_paths" />
-        </provider>
-        
-        <!-- Provider adicional para compatibilidade -->
-        <provider
-            android:name="org.apache.cordova.file.FileProvider"
-            android:authorities="${applicationId}.cdv.file.provider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/cordova_file_paths" />
-        </provider>
-
-        <!-- Inicializadores do AndroidX -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
-            android:exported="false"
-            tools:node="merge">
-            <meta-data
-                android:name="androidx.emoji2.text.EmojiCompatInitializer"
-                android:value="androidx.startup"
-                tools:node="remove" />
-        </provider>
-
-        <meta-data
-        android:name="com.google.android.gms.ads.APPLICATION_ID"
-        android:value="ca-app-pub-3940256099942544~3347511713" />
-
     </application>
-
-    <!-- ========== VERSÕES DO SDK ========== -->
-    <uses-sdk
-        android:minSdkVersion="21"
-        android:targetSdkVersion="34"
-        android:maxSdkVersion="34" />
 
 </manifest>
