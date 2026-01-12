@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    // Adicionar plugin do Google Services se for usar AdMob
+    // alias(libs.plugins.google.services) // Se tiver na sua libs.versions.toml
 }
 
 android {
@@ -16,6 +18,14 @@ android {
         
         buildFeatures {
             buildConfig = true
+        }
+        
+        // Para os providers funcionarem corretamente
+        manifestPlaceholders["applicationId"] = applicationId
+        
+        // Para Android 12+
+        if (minSdk >= 31) {
+            manifestPlaceholders["exported"] = "true"
         }
     }
 
@@ -82,15 +92,55 @@ android {
         jvmTarget = "11"
     }
     
-    // REMOVE A APPTIONS DEPRECIADA
-    // aaptOptions {
-    //     cruncherEnabled = false
-    // }
+    // Para o FileProvider e compatibilidade
+    packaging {
+        resources {
+            // Excluir arquivos desnecessários para reduzir APK
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/license.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/notice.txt",
+                "META-INF/ASL2.0",
+                "META-INF/*.kotlin_module",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1"
+            )
+        }
+    }
 }
 
 dependencies {
+    // Dependências básicas existentes
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.webkit)
+    
+    // 🔧 ADICIONAR ESSAS PARA PLUGINS DO C2/C3:
+    
+    // 1. PARA FileProvider funcionar (ESSENCIAL)
+    implementation("androidx.core:core:1.12.0")
+    
+    // 2. Para compatibilidade com AndroidX
+    implementation("androidx.legacy:legacy-support-v4:1.0.0")
+    
+    // 3. PARA ADMOB (opcional - adicione só se for usar)
+    // implementation("com.google.android.gms:play-services-ads:22.6.0")
+    
+    // 4. PARA GOOGLE PLAY SERVICES (opcional)
+    // implementation("com.google.android.gms:play-services-base:18.3.0")
+    
+    // 5. Para permissões em tempo de execução (Android 6+)
+    implementation("androidx.activity:activity-ktx:1.8.0")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
+    
+    // 6. Para WebView moderno
+    implementation("androidx.webkit:webkit:1.9.0")
+    
+    // 7. Para notificações (Android 13+)
+    implementation("androidx.core:core-ktx:1.12.0")
 }
