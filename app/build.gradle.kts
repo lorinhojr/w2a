@@ -1,50 +1,57 @@
+// ============================================================================
+// W2A / ZEngine — app Android (WebView com o jogo em assets/www)
+//
+// Tudo que muda por app vem de app/w2a.properties (escrito pelo CI a partir
+// de dados validados) — nada de "sed" em código-fonte.
+// Assinatura: arquivo .properties apontado por W2A_SIGNING_FILE (fora do repo).
+// ============================================================================
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
 }
 
+val app = Properties().apply {
+    val f = file("w2a.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun appProp(key: String, def: String): String = app.getProperty(key)?.takeIf { it.isNotBlank() } ?: def
+
+val signing = Properties().apply {
+    val path = System.getenv("W2A_SIGNING_FILE")
+    if (!path.isNullOrBlank() && file(path).exists()) file(path).inputStream().use { load(it) }
+}
+
 android {
-    namespace = "PACOTE_DINAMICO"
+    // Namespace do código é fixo; o ID do app (applicationId) vem do w2a.properties
+    namespace = "com.w2a.runtime"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "PACOTE_DINAMICO"
-        minSdk = libs.versions.minSdk.get().toInt()
+        applicationId = appProp("applicationId", "com.w2a.app")
+        minSdk = appProp("minSdk", libs.versions.minSdk.get()).toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
-        
-        buildFeatures {
-            buildConfig = true
-        }
+        versionCode = appProp("versionCode", "1").toInt()
+        versionName = appProp("versionName", "1.0.0")
+        resValue("string", "app_name", appProp("appName", "App"))
+        resValue("color", "splash_bg", appProp("backgroundColor", "#000000"))
+        manifestPlaceholders["screenOrientation"] = appProp("orientation", "sensorLandscape")
     }
 
-    /**
-     * ASSINATURA SIMPLES E DIRETA
-     */
+    buildFeatures {
+        buildConfig = true
+        resValues = true
+    }
+
     signingConfigs {
         create("release") {
-            // Verifica se existe chave1.jks no diretório do app
-            val keystoreFile = file("chave1.jks")
-            
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: "android"
-                keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: "androiddebugkey"
-                keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: "android"
-                println("✅ Usando chave1.jks para assinatura")
-            } else {
-                // Tenta usar variável de ambiente
-                val storeFilePath = System.getenv("ORG_GRADLE_PROJECT_storeFile")
-                if (storeFilePath != null && storeFilePath.isNotBlank()) {
-                    storeFile = file(storeFilePath)
-                    storePassword = System.getenv("ORG_GRADLE_PROJECT_storePassword") ?: "android"
-                    keyAlias = System.getenv("ORG_GRADLE_PROJECT_keyAlias") ?: "androiddebugkey"
-                    keyPassword = System.getenv("ORG_GRADLE_PROJECT_keyPassword") ?: "android"
-                    println("✅ Usando keystore de variável: $storeFilePath")
-                } else {
-                    println("⚠ Nenhum keystore configurado, usando debug.keystore padrão")
-                }
+            val store = signing.getProperty("storeFile")
+            if (!store.isNullOrBlank() && file(store).exists()) {
+                storeFile = file(store)
+                storePassword = signing.getProperty("storePassword")
+                keyAlias = signing.getProperty("keyAlias")
+                keyPassword = signing.getProperty("keyPassword")
             }
         }
     }
@@ -53,44 +60,32 @@ android {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
-            
-            // Só usa signing se tiver configurado
-            if (signingConfigs.findByName("release")?.storeFile?.exists() == true) {
-                signingConfig = signingConfigs.getByName("release")
-                println("✅ Build release será assinado")
-            } else {
-                println("⚠ Build release não será assinado (usará debug)")
-            }
-
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            val rel = signingConfigs.getByName("release")
+            if (rel.storeFile != null) signingConfig = rel
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-
         getByName("debug") {
             isDebuggable = true
         }
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
+    androidResources {
+        // Arquivos do jogo não são comprimidos de novo (áudio/imagens já são) e
+        // nada é ignorado (o padrão do aapt descarta pastas que começam com "_")
+        noCompress += listOf("png", "jpg", "jpeg", "webp", "ogg", "m4a", "mp3", "webm", "mp4", "zlp", "wasm")
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~"
     }
-    
-    // REMOVE A APPTIONS DEPRECIADA
-    // aaptOptions {
-    //     cruncherEnabled = false
-    // }
 }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.material)
     implementation(libs.androidx.webkit)
 }

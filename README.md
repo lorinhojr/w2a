@@ -334,3 +334,26 @@ Um agradecimento especial para:
 [🏠 Página Inicial](https://github.com/lorinhojr/w2a) | [📖 Documentação](#) | [🐛 Reportar Bug](https://github.com/lorinhojr/w2a/issues)
 
 </div>
+
+
+## 🎮 Builds da ZEngine (novo)
+
+O workflow `.github/workflows/zengine.yml` compila os jogos exportados pelo editor
+ZEngine (botão **Exportar → Android**). O evento traz só o id do pedido; o projeto,
+o ícone e a chave (cifrada) vêm do servidor da ZEngine, e o APK/AAB volta para lá.
+Nada fica público no GitHub.
+
+### Configuração (uma vez)
+1. No servidor da ZEngine rode `php install/gerar-chaves-build.php` (gera o par de chaves).
+2. Em **Settings → Secrets and variables → Actions** crie:
+   - `ZE_SERVER` — endereço do servidor "conta" (ex.: `https://conta.seusite.com.br`)
+   - `ZE_BUILD_SECRET` — o mesmo `builder.callback_secret` do `config.php`
+   - `ZE_SEAL_KEY` — a chave **privada** mostrada pelo script
+3. Crie um token *fine-grained* com acesso só a este repositório
+   (permissão **Contents: Read and write**) e coloque em `builder.github_token`.
+
+### Segurança
+- Nenhum dado do usuário entra em comandos de shell (tudo validado em Python).
+- Senhas de keystore nunca aparecem no log: chegam cifradas (libsodium sealed box)
+  e são mascaradas (`::add-mask::`).
+- Android: targetSdk 36 (exigência do Google Play desde 31/08/2026), minSdk 24–36.

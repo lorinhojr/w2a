@@ -81,4 +81,4 @@
 -keep class **.R$* { *; }
 
 # Keep the main activity
--keep class PACOTE_DINAMICO.MainActivity { *; }
+-keep class com.w2a.runtime.MainActivity { *; }
