@@ -254,12 +254,8 @@ O W2A Builder é mantido com ❤️ por **Júnior G. Teixeira**. Se o projeto te
 
 ### 📲 PIX
 - **Nome**: Júnior G. Teixeira
-- **Chave**: (55) 99237-9133
-- **Banco**: Inter
-
-### 🎗️ Vakinha
-Apoie o desenvolvimento contínuo:
-[https://www.vakinha.com.br/vaquinha/zurl-engine](https://www.vakinha.com.br/vaquinha/zurl-engine)
+- **Chave**: (55) 99204-8715
+- **Banco**: PicPAY
 
 ### Outras Formas de Apoiar
 - ⭐ **Dê uma estrela** no repositório
