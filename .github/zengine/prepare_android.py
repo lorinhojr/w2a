@@ -131,8 +131,39 @@ def load_options(folder: Path) -> dict:
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", bg):
         bg = "#000000"
 
+    # Recursos nativos opcionais (o editor marca conforme os plugins usados)
+    feats = o.get("features", [])
+    if not isinstance(feats, list):
+        feats = []
+    features = sorted({f for f in feats if f in ("iap", "ads", "firebase")})
+    admob = str(o.get("admobAppId", "")).strip()
+    if "ads" in features and not re.fullmatch(r"ca-app-pub-[0-9]{16}~[0-9]{10}", admob):
+        fail("ID do app AdMob inválido (formato ca-app-pub-0000000000000000~0000000000). Confira as propriedades do plugin de anúncios.")
+    if "ads" not in features:
+        admob = ""
+
     return {"name": name, "pkg": pkg, "ver": ver, "code": code, "min": min_sdk, "orient": orient,
-            "output": output, "tasks": tasks, "signing": signing, "bg": bg}
+            "output": output, "tasks": tasks, "signing": signing, "bg": bg, "features": features, "admob": admob}
+
+
+def google_services(folder: Path, pkg: str) -> bool:
+    """Copia o google-services.json (Firebase) se ele for deste app. Devolve se o Firebase entra no app."""
+    dst = APP / "google-services.json"
+    if dst.exists():
+        dst.unlink()
+    src = folder / "google-services.json"
+    if not src.exists():
+        return False
+    try:
+        g = json.loads(src.read_text("utf-8"))
+        pkgs = [c["client_info"]["android_client_info"]["package_name"] for c in g.get("client", [])]
+    except Exception:  # noqa: BLE001
+        fail("O google-services.json não é válido (baixe de novo no console do Firebase).")
+    if pkg not in pkgs:
+        fail(f"O google-services.json é do app {', '.join(map(str, pkgs)) or '?'}, mas o ID do pacote deste build é {pkg}. "
+             "Use o mesmo ID do pacote ou adicione este app no Firebase e baixe o arquivo novo.")
+    shutil.copyfile(src, dst)
+    return True
 
 
 # ── Jogo ────────────────────────────────────────────────────────────────────
@@ -217,11 +248,9 @@ def make_icons(icon_path: Path, bg_hex: str) -> None:
         rnd = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         rnd.paste(legacy, (0, 0), mask)
         rnd.save(folder / "ic_launcher_round.png", optimize=True)
-        # Adaptativo (Android 8+): 108dp com o ícone nos 72dp centrais (zona segura)
+        # Adaptativo (Android 8+): 108dp full-bleed — o ícone preenche tudo (evita fundo preto visível).
         fsize = round(108 * k)
-        inner = round(72 * k)
-        fg = Image.new("RGBA", (fsize, fsize), (0, 0, 0, 0))
-        fg.paste(src.resize((inner, inner), Image.LANCZOS), ((fsize - inner) // 2, (fsize - inner) // 2))
+        fg = src.resize((fsize, fsize), Image.LANCZOS)
         fg.save(folder / "ic_launcher_foreground.png", optimize=True)
 
     any_dpi = RES / "mipmap-anydpi-v26"
@@ -359,18 +388,28 @@ def main() -> None:
     folder = Path(sys.argv[1])
     o = load_options(folder)
     # Código antigo do template (pacote trocado por sed) — o novo fica em com/w2a/runtime
-    shutil.rmtree(APP / "src" / "main" / "java" / "PACOTE_DINAMICO", ignore_errors=True)
+    # O código Kotlin fica em zekt/ (ver app/build.gradle.kts); a pasta java antiga não é usada
+    shutil.rmtree(APP / "src" / "main" / "java", ignore_errors=True)
 
     props = (
         "# Gerado pela ZEngine (não edite)\n"
         f"applicationId={o['pkg']}\nversionCode={o['code']}\nversionName={prop_escape(o['ver'])}\n"
         f"minSdk={o['min']}\nappName={prop_escape(o['name'])}\norientation={o['orient']}\n"
         f"backgroundColor={o['bg']}\n"
+        f"admobAppId={o['admob']}\n"
     )
     (APP / "w2a.properties").write_text(props, "latin-1")
 
     extract_game(folder / "game.zip")
     make_icons(folder / "icon.png", o["bg"])
+
+    # Firebase: google-services.json enviado pelo editor (tem que ser deste app)
+    feats = [f for f in o["features"] if f != "firebase"]
+    if google_services(folder, o["pkg"]):
+        feats.append("firebase")
+    with open(APP / "w2a.properties", "a", encoding="latin-1") as f:
+        f.write(f"features={','.join(sorted(feats))}\n")
+    print(f"recursos nativos: {', '.join(sorted(feats)) or 'nenhum'}")
 
     new = ""
     vault = ""

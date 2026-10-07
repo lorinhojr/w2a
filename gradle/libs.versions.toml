@@ -1,6 +1,7 @@
 [versions]
 agp = "8.13.2"
-kotlin = "2.0.21"
+# O SDK de anúncios (play-services-ads 24+) exige Kotlin 2.1 ou mais novo
+kotlin = "2.2.21"
 coreKtx = "1.16.0"
 webkit = "1.12.1"
 # Google Play exige targetSdk 36 (Android 16) para apps novos/atualizados a partir de 31/08/2026
@@ -8,11 +9,22 @@ compileSdk = "36"
 targetSdk = "36"
 # Padrão: Android 7.0 (API 24). O build da ZEngine pode subir até 36.
 minSdk = "24"
+# Recursos opcionais (só entram no app quando o projeto usa o plugin)
+billing = "8.3.0"
+firebaseBom = "34.18.0"
+googleServices = "4.5.0"
+playServicesAds = "25.5.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+play-billing = { group = "com.android.billingclient", name = "billing", version.ref = "billing" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
+play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }

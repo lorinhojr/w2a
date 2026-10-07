@@ -21,14 +21,14 @@
 #-renamesourcefileattribute SourceFile
 
 # ====================================================
-# Regras específicas para WebView e Construct/HTML5
+# Regras específicas para WebView e jogos HTML5
 # ====================================================
 
 # Keep webview classes
 -keep class org.chromium.** { *; }
 -dontwarn org.chromium.**
 
-# Keep Construct/HTML5 game classes
+# Keep HTML5 game classes
 -keep class * extends android.webkit.WebChromeClient { *; }
 -keep class * extends android.webkit.WebViewClient { *; }
 -keepclassmembers class * extends android.webkit.WebView {
