@@ -1,0 +1,111 @@
+# ============================================================================
+# ZEngine — build Android (APK/AAB) pedido pelo editor.
+#
+# O evento só traz o id do job. Arquivos e opções vêm do servidor da ZEngine
+# com HMAC (segredo ZE_BUILD_SECRET); a chave do usuário vem cifrada
+# (ZE_SEAL_KEY). Os resultados voltam para o servidor — nada é publicado
+# no GitHub (sem release pública, sem artefato).
+#
+# Tudo isto é configurado sozinho pelo assistente "configurar-builds.php"
+# do servidor da conta. Segredos usados (Settings → Secrets → Actions):
+#   ZE_SERVER        https://conta.seusite.com.br  (base_url do servidor "conta")
+#   ZE_BUILD_SECRET  segredo compartilhado com o servidor
+#   ZE_SEAL_KEY      chave privada (a pública fica no servidor)
+# ============================================================================
+name: ZEngine Build
+
+on:
+  repository_dispatch:
+    types: [zengine_build]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zengine-${{ github.event.client_payload.job }}
+  cancel-in-progress: false
+
+jobs:
+  teste:
+    # Disparado pelo assistente de configuração (configurar-builds.php)
+    if: github.event.client_payload.platform == 'teste'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ZE_JOB: ${{ github.event.client_payload.job }}
+      ZE_SERVER: ${{ secrets.ZE_SERVER }}
+      ZE_BUILD_SECRET: ${{ secrets.ZE_BUILD_SECRET }}
+      ZE_SEAL_KEY: ${{ secrets.ZE_SEAL_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Testar conexão
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pynacl
+          python3 .github/zengine/ci.py ping
+
+  android:
+    if: github.event.client_payload.platform == 'android'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ZE_JOB: ${{ github.event.client_payload.job }}
+      ZE_SERVER: ${{ secrets.ZE_SERVER }}
+      ZE_BUILD_SECRET: ${{ secrets.ZE_BUILD_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Baixar o pedido
+        run: |
+          python3 .github/zengine/ci.py status compilando "Preparando o projeto Android…"
+          python3 .github/zengine/ci.py fetch "$RUNNER_TEMP/job"
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Preparar projeto
+        id: prep
+        env:
+          ZE_SEAL_KEY: ${{ secrets.ZE_SEAL_KEY }}
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pillow pynacl
+          python3 .github/zengine/prepare_android.py "$RUNNER_TEMP/job"
+
+      - name: Compilar
+        run: |
+          python3 .github/zengine/ci.py status compilando "Compilando (isso leva alguns minutos)…"
+          chmod +x gradlew
+          ./gradlew ${{ steps.prep.outputs.tasks }} --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Enviar resultados
+        env:
+          BASE: ${{ steps.prep.outputs.base_name }}
+          NEW_KEY: ${{ steps.prep.outputs.new_key }}
+          VAULT_KEY: ${{ steps.prep.outputs.vault_key }}
+        run: |
+          shopt -s nullglob
+          for f in app/build/outputs/apk/release/*.apk; do python3 .github/zengine/ci.py upload "$f" "$BASE.apk"; done
+          for f in app/build/outputs/bundle/release/*.aab; do python3 .github/zengine/ci.py upload "$f" "$BASE.aab"; done
+          for f in app/build/outputs/apk/debug/*.apk; do python3 .github/zengine/ci.py upload "$f" "$BASE-teste.apk"; done
+          if [ -n "$NEW_KEY" ] && [ -f "$NEW_KEY" ]; then python3 .github/zengine/ci.py upload "$NEW_KEY" "chave-android.zip"; fi
+          if [ -n "$VAULT_KEY" ] && [ -f "$VAULT_KEY" ]; then python3 .github/zengine/ci.py upload "$VAULT_KEY" "chave.sealed"; fi
+          python3 .github/zengine/ci.py status pronto "Pronto!"
+
+      - name: Avisar erro
+        if: failure()
+        run: |
+          MSG="O build falhou."
+          if [ -f "$RUNNER_TEMP/gradle.log" ]; then
+            MSG="$MSG $(grep -E 'error:|ERROR|What went wrong|FAILURE' -A3 "$RUNNER_TEMP/gradle.log" | head -c 3000)"
+          fi
+          python3 .github/zengine/ci.py status erro "$MSG" || true
+
+      - name: Limpar segredos
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/w2a-* "$RUNNER_TEMP"/chave-android.zip "$RUNNER_TEMP"/chave.sealed

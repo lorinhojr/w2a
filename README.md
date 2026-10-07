@@ -254,8 +254,12 @@ O W2A Builder é mantido com ❤️ por **Júnior G. Teixeira**. Se o projeto te
 
 ### 📲 PIX
 - **Nome**: Júnior G. Teixeira
-- **Chave**: (55) 99204-8715
-- **Banco**: PicPAY
+- **Chave**: (55) 99237-9133
+- **Banco**: Inter
+
+### 🎗️ Vakinha
+Apoie o desenvolvimento contínuo:
+[https://www.vakinha.com.br/vaquinha/zurl-engine](https://www.vakinha.com.br/vaquinha/zurl-engine)
 
 ### Outras Formas de Apoiar
 - ⭐ **Dê uma estrela** no repositório
@@ -330,3 +334,23 @@ Um agradecimento especial para:
 [🏠 Página Inicial](https://github.com/lorinhojr/w2a) | [📖 Documentação](#) | [🐛 Reportar Bug](https://github.com/lorinhojr/w2a/issues)
 
 </div>
+
+
+## 🎮 Builds da ZEngine (novo)
+
+O workflow `.github/workflows/zengine.yml` compila os jogos exportados pelo editor
+ZEngine (botão **Exportar → Android**). O evento traz só o id do pedido; o projeto,
+o ícone e a chave (cifrada) vêm do servidor da ZEngine, e o APK/AAB volta para lá.
+Nada fica público no GitHub.
+
+### Configuração (uma vez, automática)
+Abra `https://SEU-SERVIDOR-DA-CONTA/configurar-builds.php`, digite a senha do banco,
+crie o token pelo botão "Abrir o GitHub já preenchido" e clique em **Configurar tudo**.
+O assistente envia estes arquivos para o repositório, grava os segredos
+(`ZE_SERVER`, `ZE_BUILD_SECRET`, `ZE_SEAL_KEY`) e faz um teste de conexão.
+
+### Segurança
+- Nenhum dado do usuário entra em comandos de shell (tudo validado em Python).
+- Senhas de keystore nunca aparecem no log: chegam cifradas (libsodium sealed box)
+  e são mascaradas (`::add-mask::`).
+- Android: targetSdk 36 (exigência do Google Play desde 31/08/2026), minSdk 24–36.

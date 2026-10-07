@@ -1,0 +1,18 @@
+# Gradle / Android Studio
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Gerado no build (nunca versionar)
+app/w2a.properties
+app/src/main/assets/www/
+*.jks
+*.keystore
+*.p12
+signing.properties

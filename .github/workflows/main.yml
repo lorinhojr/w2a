@@ -1,3 +1,17 @@
+# ============================================================================
+# W2A Builder (painel web2app) — APK/AAB a partir de links do zip e do ícone.
+#
+# Segurança (corrigido):
+# - Nenhum valor do payload entra direto em comandos (antes dava para injetar
+#   comandos pelo nome do app).
+# - Senhas de keystore NÃO podem vir em claro: o painel manda "keystore_sealed"
+#   cifrado com a chave pública do builder (antes apareciam no log público).
+# - A release pública leva só APK/AAB; nunca chaves.
+#
+# Segredos opcionais (chave fixa para o modo automático, permite atualizar apps):
+#   W2A_REPO_KEYSTORE (base64), W2A_REPO_STOREPASS, W2A_REPO_ALIAS, W2A_REPO_KEYPASS
+#   ZE_SEAL_KEY (para abrir keystores cifradas enviadas pelo painel)
+# ============================================================================
 name: W2A Builder
 
 on:
@@ -7,183 +21,66 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     permissions:
       contents: write
-
-    env:
-      ORG_GRADLE_PROJECT_storePassword: ${{ secrets.KEY_PASSWORD || 'android' }}
-      ORG_GRADLE_PROJECT_keyPassword: ${{ secrets.KEY_PASSWORD || 'android' }}
-      ORG_GRADLE_PROJECT_keyAlias: ${{ secrets.ALIAS || 'androiddebugkey' }}
-
     steps:
-      - name: Checkout do código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Validar id
+        env:
+          APP_ID: ${{ github.event.client_payload.app_id }}
+        run: |
+          [[ "$APP_ID" =~ ^app_[A-Za-z0-9.]{1,40}$ ]] || { echo "::error::app_id inválido"; exit 1; }
+          echo "APP_ID=$APP_ID" >> "$GITHUB_ENV"
+
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
-      - name: Processar Keystore Personalizada
-        id: custom_keystore
+      - name: Preparar projeto
+        id: prep
+        env:
+          W2A_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          ZE_SEAL_KEY: ${{ secrets.ZE_SEAL_KEY }}
+          W2A_REPO_KEYSTORE: ${{ secrets.W2A_REPO_KEYSTORE }}
+          W2A_REPO_STOREPASS: ${{ secrets.W2A_REPO_STOREPASS }}
+          W2A_REPO_ALIAS: ${{ secrets.W2A_REPO_ALIAS }}
+          W2A_REPO_KEYPASS: ${{ secrets.W2A_REPO_KEYPASS }}
         run: |
-          echo "=== PROCESSANDO KEYSTORE PERSONALIZADA ==="
-          
-          if [ "${{ github.event.client_payload.keystore_info }}" != "null" ] && [ -n "${{ github.event.client_payload.keystore_info.keystore_base64 }}" ]; then
-            echo "✅ Usuário forneceu keystore personalizada"
-            echo "${{ github.event.client_payload.keystore_info.keystore_base64 }}" | base64 --decode > app/chave1.jks
-            
-            if [ -n "${{ github.event.client_payload.keystore_info.keystore_password }}" ]; then
-              echo "ORG_GRADLE_PROJECT_storePassword=${{ github.event.client_payload.keystore_info.keystore_password }}" >> $GITHUB_ENV
-            fi
-            
-            if [ -n "${{ github.event.client_payload.keystore_info.key_password }}" ]; then
-              echo "ORG_GRADLE_PROJECT_keyPassword=${{ github.event.client_payload.keystore_info.key_password }}" >> $GITHUB_ENV
-            fi
-            
-            if [ -n "${{ github.event.client_payload.keystore_info.key_alias }}" ]; then
-              echo "ORG_GRADLE_PROJECT_keyAlias=${{ github.event.client_payload.keystore_info.key_alias }}" >> $GITHUB_ENV
-            fi
-          else
-            echo "ℹ️  Usando keystore automática"
-          fi
+          python3 -m pip install --quiet --disable-pip-version-check pillow pynacl
+          python3 .github/zengine/legacy_payload.py "$RUNNER_TEMP/job"
+          python3 .github/zengine/prepare_android.py "$RUNNER_TEMP/job"
 
-      - name: Personalizar Projeto
-        run: |
-          PKG="${{ github.event.client_payload.package_name }}"
-          APP_NAME="${{ github.event.client_payload.app_name }}"
-          APP_VERSION="${{ github.event.client_payload.app_version || '1.0.0' }}"
-          PKG_PATH=$(echo "$PKG" | tr '.' '/')
-
-          echo "=== PERSONALIZANDO PROJETO ==="
-          echo "App: $APP_NAME | Package: $PKG | Versão: $APP_VERSION"
-
-          if [ -f "app/src/main/res/values/strings.xml" ]; then
-            sed -i "s/NOME_DINAMICO/$APP_NAME/g" app/src/main/res/values/strings.xml
-          fi
-
-          if [ -f "app/src/main/AndroidManifest.xml" ]; then
-            sed -i 's/package="[^"]*"//g' app/src/main/AndroidManifest.xml
-            sed -i "s/PACOTE_DINAMICO/$PKG/g" app/src/main/AndroidManifest.xml
-          fi
-
-          if [ -f "app/build.gradle.kts" ]; then
-            sed -i "s/namespace = \".*\"/namespace = \"$PKG\"/g" app/build.gradle.kts
-            sed -i "s/applicationId = \".*\"/applicationId = \"$PKG\"/g" app/build.gradle.kts
-            sed -i "s/PACOTE_DINAMICO/$PKG/g" app/build.gradle.kts
-            sed -i "s/versionName = \".*\"/versionName = \"$APP_VERSION\"/g" app/build.gradle.kts
-          fi
-
-          OLD_PATH=$(find app/src/main/java -name "MainActivity.java" | head -1)
-          if [ -n "$OLD_PATH" ]; then
-            mkdir -p "app/src/main/java/$PKG_PATH"
-            mv "$OLD_PATH" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            sed -i "s/package .*/package $PKG;/" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            sed -i "s/PACOTE_DINAMICO/$PKG/g" "app/src/main/java/$PKG_PATH/MainActivity.java"
-            find app/src/main/java -type d -empty -delete
-          fi
-
-      # ... (restante dos passos permanece igual ao seu workflow original)
-      - name: Configurar Keystore (Fallback)
-        run: |
-          if [ ! -f "app/chave1.jks" ]; then
-            if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
-              echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > app/chave1.jks
-            else
-              keytool -genkeypair -v \
-                -keystore app/debug.keystore \
-                -alias androiddebugkey \
-                -keyalg RSA \
-                -keysize 2048 \
-                -validity 10000 \
-                -storepass android \
-                -keypass android \
-                -dname "CN=Android Debug, O=Android, C=US"
-            fi
-          fi
-
-      - name: Download e Aplicação do Ícone
-        run: |
-          sudo apt-get update && sudo apt-get install -y imagemagick webp || true
-          ICON_URL="${{ github.event.client_payload.icon_url }}"
-          
-          if [ -n "$ICON_URL" ]; then
-            curl -L -A "Mozilla/5.0" --connect-timeout 10 "$ICON_URL" -o /tmp/icon_raw || echo "Falha download"
-          fi
-
-          if [ -s /tmp/icon_raw ]; then
-            convert /tmp/icon_raw -resize 512x512 /tmp/ic_launcher.webp || convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
-          else
-            convert -size 512x512 xc:#2196F3 /tmp/ic_launcher.webp
-          fi
-
-          for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            mkdir -p "app/src/main/res/$dir"
-            cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher.webp"
-            cp /tmp/ic_launcher.webp "app/src/main/res/$dir/ic_launcher_round.webp"
-            rm -f "app/src/main/res/$dir/ic_launcher.png" "app/src/main/res/$dir/ic_launcher_round.png"
-          done
-
-      - name: Extrair Assets do Jogo
-        run: |
-          mkdir -p app/src/main/assets/www
-          rm -rf app/src/main/assets/www/*
-          
-          if [ -n "${{ github.event.client_payload.zip_url }}" ]; then
-            curl -L "${{ github.event.client_payload.zip_url }}" -o /tmp/jogo.zip
-            if [ -s /tmp/jogo.zip ]; then
-              unzip -o /tmp/jogo.zip -d app/src/main/assets/www/
-              if [ ! -f "app/src/main/assets/www/index.html" ]; then
-                SEARCH_INDEX=$(find app/src/main/assets/www -name "index.html" | head -1)
-                if [ -n "$SEARCH_INDEX" ]; then
-                  mv $(dirname "$SEARCH_INDEX")/* app/src/main/assets/www/
-                fi
-              fi
-            fi
-          fi
-
-          if [ ! -f "app/src/main/assets/www/index.html" ]; then
-            echo "<html><body style='background:#000;color:#fff'><h1>Carregando...</h1></body></html>" > app/src/main/assets/www/index.html
-          fi
-
-      - name: Preparar Gradle
+      - name: Compilar APK e AAB
         run: |
           chmod +x gradlew
+          ./gradlew ${{ steps.prep.outputs.tasks }} --no-daemon --stacktrace
 
-      - name: Compilar APK e AAB (Release)
-        run: |
-          ./gradlew clean
-          ./gradlew assembleRelease --no-daemon --stacktrace
-          ./gradlew bundleRelease --no-daemon --stacktrace
-
-      - name: Upload dos Artefatos
+      - name: Upload dos artefatos
         uses: actions/upload-artifact@v4
         with:
-          name: Build_${{ github.event.client_payload.app_id }}
+          name: Build_${{ env.APP_ID }}
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
-          retention-days: 7
+          retention-days: 3
 
-      - name: Criar Release Pública
-        if: success()
-        uses: softprops/action-gh-release@v1
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: "${{ github.event.client_payload.app_id }}"
-          tag_name: "build-${{ github.run_id }}-${{ github.event.client_payload.app_id }}"
+          name: ${{ env.APP_ID }}
+          tag_name: build-${{ github.run_id }}-${{ env.APP_ID }}
           files: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
-          draft: false
-          prerelease: false
-          generate_release_notes: false
           body: |
-            **App:** ${{ github.event.client_payload.app_name || 'Sem nome' }}
-            **Versão:** ${{ github.event.client_payload.app_version || '1.0.0' }}
-            **Build ID:** ${{ github.event.client_payload.app_id }}
-            **Package:** ${{ github.event.client_payload.package_name }}
-            
-            Gerado automaticamente pelo W2A Builder.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            Build ${{ env.APP_ID }} gerado pelo W2A Builder.
+
+      - name: Limpar segredos
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/w2a-* "$RUNNER_TEMP"/chave-android.zip
