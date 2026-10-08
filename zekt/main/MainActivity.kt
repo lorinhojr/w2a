@@ -106,7 +106,7 @@ class MainActivity : Activity(), ZeHost {
         }
 
         // Serviços que este app tem (dependem dos plugins usados no projeto)
-        for (s in IapFactory.create(this) + AdsFactory.create(this) + FirebaseFactory.create(this)) services[s.name] = s
+        for (s in listOf<ZeService>(BgService(this)) + IapFactory.create(this) + AdsFactory.create(this) + FirebaseFactory.create(this)) services[s.name] = s
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(web, "ZEAndroid", setOf("https://$APP_HOST")) { _, message, _, isMainFrame, proxy ->
@@ -142,6 +142,7 @@ class MainActivity : Activity(), ZeHost {
                     val f = JSONArray()
                     f.put("app")
                     services.keys.forEach { f.put(it) }
+                    if (BuildConfig.BG_AUDIO) f.put("bgaudio")
                     emit("app", "hello", JSONObject().put("features", f))
                 }
                 "exit" -> finishAndRemoveTask()
@@ -247,8 +248,11 @@ class MainActivity : Activity(), ZeHost {
     override fun onPause() {
         resumed = false
         services.values.forEach { it.onPause() }
-        web.onPause()
-        web.pauseTimers()
+        // Jogo/música em segundo plano: o WebView continua rodando
+        if ((services["bg"] as? BgService)?.keepWebAlive != true) {
+            web.onPause()
+            web.pauseTimers()
+        }
         super.onPause()
     }
 

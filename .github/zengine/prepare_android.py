@@ -135,7 +135,7 @@ def load_options(folder: Path) -> dict:
     feats = o.get("features", [])
     if not isinstance(feats, list):
         feats = []
-    features = sorted({f for f in feats if f in ("iap", "ads", "firebase")})
+    features = sorted({f for f in feats if f in ("iap", "ads", "firebase", "bgaudio")})
     admob = str(o.get("admobAppId", "")).strip()
     if "ads" in features and not re.fullmatch(r"ca-app-pub-[0-9]{16}~[0-9]{10}", admob):
         fail("ID do app AdMob inválido (formato ca-app-pub-0000000000000000~0000000000). Confira as propriedades do plugin de anúncios.")

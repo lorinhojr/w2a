@@ -27,6 +27,7 @@ val admobAppId = appProp("admobAppId", "")
 val hasIap = "iap" in features
 val hasAds = "ads" in features && Regex("^ca-app-pub-[0-9]{16}~[0-9]{10}$").matches(admobAppId)
 val hasFirebase = "firebase" in features && file("google-services.json").exists()
+val hasBgAudio = "bgaudio" in features
 
 // Firebase: o plugin do Google lê o google-services.json (só quando o projeto usa)
 if (hasFirebase) apply(plugin = "com.google.gms.google-services")
@@ -51,6 +52,7 @@ android {
         resValue("color", "splash_bg", appProp("backgroundColor", "#000000"))
         manifestPlaceholders["screenOrientation"] = appProp("orientation", "sensorLandscape")
         manifestPlaceholders["admobAppId"] = if (hasAds) admobAppId else ""
+        buildConfigField("boolean", "BG_AUDIO", hasBgAudio.toString())
     }
 
     sourceSets {
@@ -61,6 +63,11 @@ android {
                 if (hasAds) "../zekt/ads" else "../zekt/noads",
                 if (hasFirebase) "../zekt/firebase" else "../zekt/nofirebase"
             ))
+        }
+        // Sem música em segundo plano: remove o serviço de mídia e as permissões
+        if (!hasBgAudio) {
+            getByName("debug") { manifest.srcFile("../zekt/manifest-nobgaudio/AndroidManifest.xml") }
+            getByName("release") { manifest.srcFile("../zekt/manifest-nobgaudio/AndroidManifest.xml") }
         }
     }
 
