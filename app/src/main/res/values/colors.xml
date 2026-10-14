@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- splash_bg é gerado pelo Gradle (resValue) -->
+    <color name="nab_dark">#0A0A0C</color>
 </resources>

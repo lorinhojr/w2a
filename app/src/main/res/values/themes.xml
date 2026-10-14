@@ -1,7 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Tela cheia, sem barra; o fundo usa a cor do jogo (splash_bg vem do build.gradle) -->
     <style name="Theme.W2A" parent="android:Theme.Material.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@color/splash_bg</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
     </style>
 </resources>

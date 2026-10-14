@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- app_name é gerado pelo Gradle (resValue) a partir de app/w2a.properties -->
+    <string name="nab_powered">Feito com NexABuild</string>
 </resources>
