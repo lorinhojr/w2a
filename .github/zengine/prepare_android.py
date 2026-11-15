@@ -248,9 +248,17 @@ def make_icons(icon_path: Path, bg_hex: str) -> None:
         rnd = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         rnd.paste(legacy, (0, 0), mask)
         rnd.save(folder / "ic_launcher_round.png", optimize=True)
-        # Adaptativo (Android 8+): 108dp full-bleed — o ícone preenche tudo (evita fundo preto visível).
+        # Adaptativo (Android 8+): canvas 108dp com arte centralizada na safe-zone (72dp = ~66.7%)
+        # evitando cortes pelas máscaras do sistema (MIUI, Samsung, Pixel).
         fsize = round(108 * k)
-        fg = src.resize((fsize, fsize), Image.LANCZOS)
+        safe_size = round(72 * k)
+        fg_art = src.resize((safe_size, safe_size), Image.LANCZOS)
+        corner_pixel = src.getpixel((0, 0))
+        is_opaque = len(corner_pixel) >= 4 and corner_pixel[3] == 255
+        bg_fill = corner_pixel if is_opaque else (0, 0, 0, 0)
+        fg = Image.new("RGBA", (fsize, fsize), bg_fill)
+        offset = (fsize - safe_size) // 2
+        fg.paste(fg_art, (offset, offset), fg_art if fg_art.mode == "RGBA" else None)
         fg.save(folder / "ic_launcher_foreground.png", optimize=True)
 
     any_dpi = RES / "mipmap-anydpi-v26"
