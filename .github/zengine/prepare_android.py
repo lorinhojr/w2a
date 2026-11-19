@@ -6,6 +6,7 @@ Prepara o projeto Android a partir de um job da ZEngine (pasta baixada pelo ci.p
 - Escreve app/w2a.properties (lido pelo Gradle).
 - Extrai o jogo em app/src/main/assets/www (sem path traversal, com limites).
 - Gera os ícones (mipmaps legados + adaptativo).
+- AndroidManifest.xml do projeto (se veio): revalidado e copiado sobre o do modelo.
 - Assinatura: chave do usuário (secrets.bin, cifrado com a chave pública do
   servidor; aberto com ZE_SEAL_KEY) ou chave nova gerada aqui.
   As senhas são mascaradas no log antes de qualquer uso.
@@ -167,6 +168,50 @@ def google_services(folder: Path, pkg: str) -> bool:
 
 
 # ── Jogo ────────────────────────────────────────────────────────────────────
+
+ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
+
+
+def user_manifest(folder: Path) -> None:
+    """AndroidManifest.xml do projeto (editado no editor). Ausente = fica o do modelo. Revalidado aqui (defesa extra)."""
+    src = folder / "AndroidManifest.xml"
+    if not src.is_file():
+        print("manifesto: modelo padrão")
+        return
+    import xml.etree.ElementTree as ET
+    raw = src.read_bytes()
+    if not raw.strip() or len(raw) > 65536:
+        fail("AndroidManifest.xml: tamanho inválido (máx. 64 KB)")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("AndroidManifest.xml: precisa estar em UTF-8")
+    if re.search(r"<!DOCTYPE|<!ENTITY", text, re.I):
+        fail("AndroidManifest.xml: DOCTYPE/ENTITY não é permitido")
+    for ph in re.findall(r"\$\{([^}]*)\}", text):
+        if ph not in ("screenOrientation", "admobAppId", "applicationId"):
+            fail(f"AndroidManifest.xml: variável ${{{ph[:40]}}} não existe no build")
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as e:
+        fail(f"AndroidManifest.xml: XML inválido ({e})")
+    if root.tag != "manifest" or "package" in root.attrib:
+        fail("AndroidManifest.xml: raiz precisa ser <manifest> sem o atributo package")
+    perms = {p.get(ANDROID_NS + "name") for p in root.findall("uses-permission")}
+    if "android.permission.INTERNET" not in perms:
+        fail("AndroidManifest.xml: falta a permissão INTERNET")
+    apps = root.findall("application")
+    if len(apps) != 1:
+        fail("AndroidManifest.xml: precisa de exatamente um <application>")
+    for k in ("name", "debuggable", "testOnly"):
+        if ANDROID_NS + k in apps[0].attrib:
+            fail(f"AndroidManifest.xml: android:{k} no <application> não é permitido")
+    names = {a.get(ANDROID_NS + "name", "") for a in apps[0].findall("activity")}
+    if not names & {".MainActivity", "com.w2a.runtime.MainActivity"}:
+        fail("AndroidManifest.xml: a .MainActivity foi removida")
+    (APP / "src" / "main" / "AndroidManifest.xml").write_bytes(raw)
+    print("manifesto: do projeto")
+
 
 def extract_game(zip_path: Path) -> None:
     if WWW.exists():
@@ -408,6 +453,7 @@ def main() -> None:
     )
     (APP / "w2a.properties").write_text(props, "latin-1")
 
+    user_manifest(folder)
     extract_game(folder / "game.zip")
     make_icons(folder / "icon.png", o["bg"])
 

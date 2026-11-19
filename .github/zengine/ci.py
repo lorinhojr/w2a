@@ -7,7 +7,7 @@ Toda chamada é assinada com HMAC-SHA256 usando o segredo ZE_BUILD_SECRET
 sensível passa pelo evento do GitHub: só o id do job.
 
 Uso:
-  ci.py fetch <pasta>               baixa options.json, game.zip, icon.png, secrets.bin, google-services.json
+  ci.py fetch <pasta>               baixa options.json, game.zip, icon.png, secrets.bin, google-services.json, AndroidManifest.xml
   ci.py status <status> [mensagem]  compilando | pronto | erro
   ci.py upload <arquivo> [nome]     envia a chave nova (chave-android.zip / chave.sealed)
   ci.py publish <apk/aab...>        publica na Release build-<job> e avisa o servidor
@@ -72,7 +72,7 @@ def _request(method: str, action: str, name: str = "", body: bytes | None = None
 def fetch(folder: str) -> None:
     os.makedirs(folder, exist_ok=True)
     for name, required in (("options.json", True), ("game.zip", True), ("icon.png", False), ("secrets.bin", False),
-                           ("google-services.json", False)):
+                           ("google-services.json", False), ("AndroidManifest.xml", False)):
         code, data = _request("GET", "input", name)
         if code == 404 and not required:
             continue
